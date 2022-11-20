@@ -7,7 +7,7 @@ with open('README.md') as f:
 setuptools.setup(
     author="Lucas Nestler",
     author_email="github.truegrad@nestler.sh",
-    name='revlib',
+    name='truegrad',
     license='BSD',
     description='PyTorch interface for TrueGrad-AdamW',
     version='0.0.1',
