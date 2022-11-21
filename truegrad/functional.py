@@ -6,8 +6,6 @@ import torch
 class MulFn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, inp: torch.Tensor, weight: torch.Tensor):
-        if not inp.ndim == weight.ndim:
-            raise ValueError(f"{inp.ndim=}  !=  {weight.ndim=}")
         if weight.requires_grad:
             ctx.save_for_backward(inp, weight)
         return inp * weight
@@ -17,7 +15,8 @@ class MulFn(torch.autograd.Function):
         if not ctx.saved_tensors:
             return None, None
         inp, weight = ctx.saved_tensors
-        summed = [1] * (inp.ndim - weight.ndim) + [i for i, dim in enumerate(weight.shape) if dim == 1]
+        diff = inp.ndim - weight.ndim
+        summed = list(range(diff)) + [i for i, dim in enumerate(weight.shape, diff) if dim == 1]
         weight_grad = dy * inp
         weight.square_grad = weight_grad.square()
         if summed:
@@ -30,10 +29,9 @@ class MulFn(torch.autograd.Function):
 class AddFn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, inp: torch.Tensor, weight: torch.Tensor):
-        if not inp.ndim == weight.ndim:
-            raise ValueError(f"{inp.ndim=}  !=  {weight.ndim=}")
         if weight.requires_grad:
-            ctx.summed = [1] * (inp.ndim - weight.ndim) + [i for i, dim in enumerate(weight.shape) if dim == 1]
+            diff = inp.ndim - weight.ndim
+            ctx.summed = list(range(diff)) + [i for i, dim in enumerate(weight.shape, diff) if dim == 1]
             ctx.batch_size = inp.size(0)
             ctx.save_for_backward(weight)
         return inp + weight
