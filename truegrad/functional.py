@@ -18,10 +18,13 @@ class MulFn(torch.autograd.Function):
             return None, None
         inp, weight = ctx.saved_tensors
         summed = [1] * (inp.ndim - weight.ndim) + [i for i, dim in enumerate(weight.shape) if dim == 1]
-        dy_inp = dy * inp
-        weight_grad = dy_inp.sum(summed).reshape(weight.size())
-        weight.square_grad = dy_inp.square().sum(summed).reshape(weight.size()) * inp.size(0)
-        return dy * weight, weight_grad
+        weight_grad = dy * inp
+        weight.square_grad = weight_grad.square()
+        if summed:
+            weight_grad = weight_grad.sum(summed)
+            weight.square_grad = weight.square_grad.sum(summed)
+        weight.square_grad = weight.square_grad.reshape(weight.size()) * dy.size(0)
+        return dy * weight, weight_grad.reshape(weight.size())
 
 
 class AddFn(torch.autograd.Function):
@@ -40,9 +43,13 @@ class AddFn(torch.autograd.Function):
         if not ctx.saved_tensors:
             return None, None
         weight, = ctx.saved_tensors
-        weight_grad = dy.sum(ctx.summed).reshape(weight.size())
-        weight.square_grad = dy.square().sum(ctx.summed).reshape(weight.size()) * ctx.batch_size
-        return dy, weight_grad
+        weight_grad = dy
+        weight.square_grad = dy.square()
+        if ctx.summed:
+            weight_grad = weight_grad.sum(ctx.summed)
+            weight.square_grad = weight.square_grad.sum(ctx.summed)
+        weight.square_grad = weight.square_grad.reshape(weight.size()) * dy.size(0)
+        return dy, weight_grad.reshape(weight.size())
 
 
 class MatMulFn(torch.autograd.Function):
@@ -114,7 +121,7 @@ class ExpandFn(torch.autograd.Function):
         if not ctx.saved_tensors:
             return None
         wgt, = ctx.saved_tensors
-        if hasattr(wgt, "square_grad"):
+        if hasattr(wgt, "square_grad") and ctx.summed:
             wgt.square_grad = wgt.square_grad.sum(ctx.summed)
         return dy.sum(ctx.summed)
 
