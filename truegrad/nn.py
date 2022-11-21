@@ -1,4 +1,3 @@
-import inspect
 from typing import Any, List, Tuple, Union
 
 import numpy as np
@@ -136,7 +135,6 @@ modules = (Embedding, Linear, LayerNorm, LayerNorm1d, LayerNorm2d, LayerNorm3d, 
 class _WrapFn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, out, fn, args, kwargs) -> torch.Tensor:
-        print("square grad fw")
         ctx.fn = fn
         ctx.args = args
         ctx.kwargs = kwargs
@@ -190,13 +188,6 @@ class TrueGradParameter(nn.Parameter):
         def base(a, k):
             return nn.Parameter.__torch_function__(func, types, a, k)
 
-        try:
-            signature = inspect.signature(func)
-        except ValueError:
-            pass
-        else:
-            if not any(isinstance(ann, torch.Tensor) for ann in signature.parameters.values()):
-                return base(args, kwargs)
         if all(not isinstance(a, TrueGradParameter) or a.activated for a in list(args) + list(kwargs.values())):
             return base(args, kwargs)
         out = base(tree_map(_unpack, args), tree_map(_unpack, kwargs))
