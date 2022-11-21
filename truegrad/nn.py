@@ -129,6 +129,10 @@ class Embedding(nn.Module):
         return gather(input, self.weight)
 
 
+modules = (Embedding, Linear, LayerNorm, LayerNorm1d, LayerNorm2d, LayerNorm3d, InstanceNorm1d, InstanceNorm2d,
+           InstanceNorm3d, BatchNorm1d, BatchNorm2d, BatchNorm3d)
+
+
 class _WrapFn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, out, fn, args, kwargs) -> torch.Tensor:

@@ -26,6 +26,10 @@ class TGAdamW(torch.optim.Optimizer):
             for p in group['params']:
                 if p.grad is None:
                     continue
+                if not hasattr(p, "square_grad") or p.square_grad is None:
+                    raise ValueError(f"Parameter of shape {list(p.size())} doesn't have `square_grad` attribute. "
+                                     f"Make sure to use truegrad.utils.patch_model() or truegrad.nn for all optimized "
+                                     f"parameters.")
 
                 state = self.state[p]
 
@@ -55,6 +59,7 @@ class TGAdamW(torch.optim.Optimizer):
                 # Decay the first and second moment running average coefficient
                 exp_avg.mul_(beta1).add_(p.grad, alpha=1 - beta1)
                 exp_avg_true_sq.mul_(beta3).add_(p.square_grad, alpha=1 - beta3)
+                p.square_grad = None
 
                 step = step_t.item()
 
