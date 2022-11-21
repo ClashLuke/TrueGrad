@@ -1,8 +1,10 @@
-from typing import List
+import inspect
+from typing import Any, List, Tuple, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.utils._pytree import tree_map
 
 from truegrad.functional import add, gather, matmul, mul
 
@@ -125,3 +127,84 @@ class Embedding(nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return gather(input, self.weight)
+
+
+class _WrapFn(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, out, fn, args, kwargs) -> torch.Tensor:
+        print("square grad fw")
+        ctx.fn = fn
+        ctx.args = args
+        ctx.kwargs = kwargs
+        return torch.zeros_like(out)
+
+    @staticmethod
+    def backward(ctx, dy: torch.Tensor) -> Tuple[None, None, None, None]:
+        def _square(x: Union[torch.Tensor, None]):
+            if isinstance(x, TrueGradParameter):
+                x = x.data
+            if not isinstance(x, torch.Tensor) or not torch.is_floating_point(x):
+                return x
+            x = x.detach().square()
+            x.requires_grad_(True)
+            return x
+
+        args = tree_map(_square, ctx.args)
+        kwargs = tree_map(_square, ctx.kwargs)
+        with torch.enable_grad():
+            out = ctx.fn(args, kwargs)
+            torch.autograd.backward(out, tree_map(_square, dy))
+        for p, a in zip(list(ctx.args) + list(ctx.kwargs.values()), list(args) + list(kwargs.values())):
+            if not isinstance(p, torch.nn.Parameter):
+                continue
+            if hasattr(p, "square_grad") and p.square_grad is not None:
+                p.square_grad = p.square_grad + a.grad
+            else:
+                p.square_grad = a.grad
+        return None, None, None, None
+
+
+class TrueGradParameter(nn.Parameter):
+    activated: bool
+
+    @staticmethod
+    def __new__(cls, data=None, requires_grad=True):
+        if data is None:
+            data = torch.zeros(())
+        out = torch.nn.Parameter._make_subclass(cls, data, requires_grad)
+        out.activated = False
+        return out
+
+    def __repr__(self):
+        return f"TrueGradParameter({self.data})"
+
+    @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        if kwargs is None:
+            kwargs = {}
+
+        def base(a, k):
+            return nn.Parameter.__torch_function__(func, types, a, k)
+
+        try:
+            signature = inspect.signature(func)
+        except ValueError:
+            pass
+        else:
+            if not any(isinstance(ann, torch.Tensor) for ann in signature.parameters.values()):
+                return base(args, kwargs)
+        if all(not isinstance(a, TrueGradParameter) or a.activated for a in list(args) + list(kwargs.values())):
+            return base(args, kwargs)
+        out = base(tree_map(_unpack, args), tree_map(_unpack, kwargs))
+        for a in list(args) + list(kwargs.values()):
+            if isinstance(a, TrueGradParameter):
+                a.activated = False
+        if not isinstance(out, torch.Tensor):
+            return out
+        return out + _WrapFn.apply(out, base, args, kwargs)
+
+
+def _unpack(x: Any) -> Any:
+    if isinstance(x, TrueGradParameter) and not x.activated:
+        x.activated = True
+    return x
