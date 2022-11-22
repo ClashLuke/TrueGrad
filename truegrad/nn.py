@@ -166,6 +166,17 @@ class _WrapFn(torch.autograd.Function):
         return None, None, None, None
 
 
+def is_tgparam(param: nn.Parameter):
+    if isinstance(param, TrueGradParameter):
+        return True
+    if isinstance(param, nn.Parameter) and hasattr(param, "activated"):
+        return True
+    return False
+
+
+_base_torch_function = nn.Parameter.__torch_function__
+
+
 class TrueGradParameter(nn.Parameter):
     activated: bool
 
@@ -186,13 +197,13 @@ class TrueGradParameter(nn.Parameter):
             kwargs = {}
 
         def base(a, k):
-            return nn.Parameter.__torch_function__(func, types, a, k)
+            return _base_torch_function(func, types, a, k)
 
-        if all(not isinstance(a, TrueGradParameter) or a.activated for a in list(args) + list(kwargs.values())):
+        if all(not is_tgparam(a) or a.activated for a in list(args) + list(kwargs.values())):
             return base(args, kwargs)
         out = base(tree_map(_unpack, args), tree_map(_unpack, kwargs))
         for a in list(args) + list(kwargs.values()):
-            if isinstance(a, TrueGradParameter):
+            if is_tgparam(a):
                 a.activated = False
         if not isinstance(out, torch.Tensor):
             return out
@@ -200,6 +211,6 @@ class TrueGradParameter(nn.Parameter):
 
 
 def _unpack(x: Any) -> Any:
-    if isinstance(x, TrueGradParameter) and not x.activated:
+    if is_tgparam(x) and not x.activated:
         x.activated = True
     return x
