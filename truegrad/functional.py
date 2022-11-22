@@ -50,24 +50,26 @@ class AddFn(torch.autograd.Function):
         return dy, weight_grad.reshape(weight.size())
 
 
-class MatMulFn(torch.autograd.Function):
+class EinsumFn(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, inp: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+    def forward(ctx, spec: str, inp: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
         if weight.requires_grad:
             ctx.save_for_backward(inp, weight)
-        return inp @ weight
+            ctx.spec = spec
+        return torch.einsum(spec, inp, weight)
 
     @staticmethod
-    def backward(ctx, dy: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def backward(ctx, dy: torch.Tensor) -> Tuple[None, torch.Tensor, torch.Tensor]:
         if not ctx.saved_tensors:
-            return None, None
+            return None, None, None
         inp, wgt = ctx.saved_tensors
-        lhs = ''.join(chr(ord('a') + i) for i in range(dy.ndim - 1))
-        d_wgt = torch.einsum(f"{lhs}y,{lhs}z->yz", inp, dy)
-        d_wgt_sq = torch.einsum(f"{lhs}y,{lhs}z->yz", inp.square(), dy.square() * inp.size(0))  # * size since mean
-        wgt.square_grad = d_wgt_sq
-        d_inp = torch.einsum(f"{lhs}z,yz->{lhs}y", dy, wgt)
-        return d_inp, d_wgt
+        inputs, output = ctx.spec.split('->')
+        lhs, rhs = inputs.split(',')
+
+        d_wgt = torch.einsum(f'{lhs},{output}->{rhs}', inp, dy)
+        wgt.square_grad = torch.einsum(f'{lhs},{output}->{rhs}', inp.square(), dy.square() * inp.size(0))
+        d_inp = torch.einsum(f"{rhs},{output}->{lhs}", wgt, dy)
+        return None, d_inp, d_wgt
 
 
 class GatherFn(torch.autograd.Function):
@@ -126,7 +128,12 @@ class ExpandFn(torch.autograd.Function):
 
 mul = MulFn.apply
 add = AddFn.apply
-matmul = MatMulFn.apply
+einsum = EinsumFn.apply
 gather = GatherFn.apply
 reshape = ReshapeFn.apply
 expand = ExpandFn.apply
+
+
+def matmul(inp: torch.Tensor, wgt: torch.Tensor):
+    batch_dims = ''.join(chr(ord('a') + i) for i in range(inp.ndim - 1))
+    return einsum(f"{batch_dims}y,yz->{batch_dims}z", inp, wgt)
