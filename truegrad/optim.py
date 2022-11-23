@@ -16,6 +16,11 @@ class TGAdamW(torch.optim.Optimizer):
 
     @torch.no_grad()
     def step(self, closure=None):
+        if closure is None:
+            loss = None
+        else:
+            with torch.enable_grad():
+                loss = closure()
         for group in self.param_groups:
             if len(group["betas"]) == 2:
                 beta1, beta2 = group["betas"]
@@ -74,3 +79,4 @@ class TGAdamW(torch.optim.Optimizer):
                     alpha = alpha * adam_update.norm() / update.norm()
 
                 p.add_(update, alpha=alpha)
+        return loss

@@ -143,7 +143,7 @@ class _WrapFn(torch.autograd.Function):
     @staticmethod
     def backward(ctx, dy: torch.Tensor) -> Tuple[None, None, None, None]:
         def _square(x: Union[torch.Tensor, None]):
-            if isinstance(x, TrueGradParameter):
+            if isinstance(x, torch.nn.Parameter):
                 x = x.data
             if not isinstance(x, torch.Tensor) or not torch.is_floating_point(x):
                 return x
