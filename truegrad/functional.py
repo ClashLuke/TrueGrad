@@ -18,11 +18,11 @@ class MulFn(torch.autograd.Function):
         diff = inp.ndim - weight.ndim
         summed = list(range(diff)) + [i for i, dim in enumerate(weight.shape, diff) if dim == 1]
         weight_grad = dy * inp
-        weight.square_grad = weight_grad.square()
+        weight.sum_grad_squared = weight_grad.square()
         if summed:
             weight_grad = weight_grad.sum(summed)
-            weight.square_grad = weight.square_grad.sum(summed)
-        weight.square_grad = weight.square_grad.reshape(weight.size()) * dy.size(0)
+            weight.sum_grad_squared = weight.sum_grad_squared.sum(summed)
+        weight.sum_grad_squared = weight.sum_grad_squared.reshape(weight.size()) * dy.size(0)
         return dy * weight, weight_grad.reshape(weight.size())
 
 
@@ -42,11 +42,11 @@ class AddFn(torch.autograd.Function):
             return None, None
         weight, = ctx.saved_tensors
         weight_grad = dy
-        weight.square_grad = dy.square()
+        weight.sum_grad_squared = dy.square()
         if ctx.summed:
             weight_grad = weight_grad.sum(ctx.summed)
-            weight.square_grad = weight.square_grad.sum(ctx.summed)
-        weight.square_grad = weight.square_grad.reshape(weight.size()) * dy.size(0)
+            weight.sum_grad_squared = weight.sum_grad_squared.sum(ctx.summed)
+        weight.sum_grad_squared = weight.sum_grad_squared.reshape(weight.size()) * dy.size(0)
         return dy, weight_grad.reshape(weight.size())
 
 
@@ -67,7 +67,7 @@ class EinsumFn(torch.autograd.Function):
         lhs, rhs = inputs.split(',')
 
         d_wgt = torch.einsum(f'{lhs},{output}->{rhs}', inp, dy)
-        wgt.square_grad = torch.einsum(f'{lhs},{output}->{rhs}', inp.square(), dy.square() * inp.size(0))
+        wgt.sum_grad_squared = torch.einsum(f'{lhs},{output}->{rhs}', inp.square(), dy.square() * inp.size(0))
         d_inp = torch.einsum(f"{rhs},{output}->{lhs}", wgt, dy)
         return None, d_inp, d_wgt
 
@@ -85,7 +85,7 @@ class GatherFn(torch.autograd.Function):
             return None, None
         inp, wgt = ctx.saved_tensors
         wgt_grad = torch.zeros_like(wgt)
-        wgt.square_grad = wgt_grad.scatter_add(0, inp, dy.square())
+        wgt.sum_grad_squared = wgt_grad.scatter_add(0, inp, dy.square())
         wgt_grad.scatter_add_(0, inp, dy)
         return None, wgt_grad
 
@@ -103,8 +103,8 @@ class ReshapeFn(torch.autograd.Function):
         if not ctx.saved_tensors:
             return None
         wgt, = ctx.saved_tensors
-        if hasattr(wgt, "square_grad"):
-            wgt.square_grad = wgt.square_grad.reshape(ctx.original_shape)
+        if hasattr(wgt, "sum_grad_squared"):
+            wgt.sum_grad_squared = wgt.sum_grad_squared.reshape(ctx.original_shape)
         return dy.reshape(ctx.original_shape)
 
 
@@ -121,8 +121,8 @@ class ExpandFn(torch.autograd.Function):
         if not ctx.saved_tensors:
             return None
         wgt, = ctx.saved_tensors
-        if hasattr(wgt, "square_grad") and ctx.summed:
-            wgt.square_grad = wgt.square_grad.sum(ctx.summed)
+        if hasattr(wgt, "sum_grad_squared") and ctx.summed:
+            wgt.sum_grad_squared = wgt.sum_grad_squared.sum(ctx.summed)
         return dy.sum(ctx.summed)
 
 

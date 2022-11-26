@@ -159,10 +159,10 @@ class _WrapFn(torch.autograd.Function):
         for p, a in zip(list(ctx.args) + list(ctx.kwargs.values()), list(args) + list(kwargs.values())):
             if not isinstance(p, torch.nn.Parameter):
                 continue
-            if hasattr(p, "square_grad") and p.square_grad is not None:
-                p.square_grad = p.square_grad + a.grad
+            if hasattr(p, "sum_grad_squared") and p.sum_grad_squared is not None:
+                p.sum_grad_squared = p.sum_grad_squared + a.grad
             else:
-                p.square_grad = a.grad
+                p.sum_grad_squared = a.grad
         return None, None, None, None
 
 

@@ -9,9 +9,10 @@ class TGAdamW(torch.optim.Optimizer):
                  eps: float = 1e-12,
                  weight_decay: float = 1e-2,
                  graft: bool = True,
-                 decay_to_init: bool = False):
+                 decay_to_init: bool = False,
+                 default_to_adam: bool = False):
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
-                        decay_to_init=decay_to_init)
+                        decay_to_init=decay_to_init, default_to_adam=default_to_adam)
         super(TGAdamW, self).__init__(params, defaults)
 
     @torch.no_grad()
@@ -31,18 +32,19 @@ class TGAdamW(torch.optim.Optimizer):
             for p in group['params']:
                 if p.grad is None:
                     continue
-                if not hasattr(p, "square_grad") or p.square_grad is None:
-                    raise ValueError(f"Parameter of shape {list(p.size())} doesn't have `square_grad` attribute. "
-                                     f"Make sure to use truegrad.utils.patch_model() or truegrad.nn for all optimized "
-                                     f"parameters.")
+                do_adam = not hasattr(p, "sum_grad_squared") or p.sum_grad_squared is None
+                if not group["default_to_adam"] and do_adam:
+                    raise ValueError(f"Parameter of shape {list(p.size())} doesn't have `sum_grad_squared` attribute. "
+                                     f"Make sure to use backpack.")
 
                 state = self.state[p]
 
                 if len(state) == 0:
                     state['step'] = torch.tensor(0.)
                     state['exp_avg'] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                    state['exp_avg_true_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                    if group["graft"]:
+                    if not do_adam:
+                        state['exp_avg_true_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                    if do_adam or group["graft"]:
                         state['exp_avg_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
                     if group["decay_to_init"]:
                         state["init"] = torch.clone(p.detach())
@@ -61,22 +63,26 @@ class TGAdamW(torch.optim.Optimizer):
                 else:
                     p.mul_(1 - decay)
 
-                # Decay the first and second moment running average coefficient
                 exp_avg.mul_(beta1).add_(p.grad, alpha=1 - beta1)
-                exp_avg_true_sq.mul_(beta3).add_(p.square_grad, alpha=1 - beta3)
-                p.square_grad = None
 
                 step = step_t.item()
-
-                denom = (exp_avg_true_sq / (1 - beta3 ** step)).sqrt().add_(group['eps'])
-                update = exp_avg / denom
                 alpha = -group['lr'] / (1 - beta1 ** step)
 
-                if group["graft"]:
+                if not do_adam:
+                    exp_avg_true_sq.mul_(beta3).add_(p.sum_grad_squared, alpha=1 - beta3)
+                    p.sum_grad_squared = None
+                    denom = (exp_avg_true_sq / (1 - beta3 ** step)).sqrt().add_(group['eps'])
+                    update = exp_avg / denom
+
+                if group["graft"] or do_adam:
                     exp_avg_sq = state['exp_avg_sq']
                     exp_avg_sq.mul_(beta2).add_(p.grad.square(), alpha=1 - beta2)
                     adam_update = exp_avg / (exp_avg_sq / (1 - beta2 ** step)).sqrt().add_(group['eps'])
+
+                if group["graft"] and not do_adam:
                     alpha = alpha * adam_update.norm() / update.norm()
+                elif do_adam:
+                    update = adam_update
 
                 p.add_(update, alpha=alpha)
         return loss
