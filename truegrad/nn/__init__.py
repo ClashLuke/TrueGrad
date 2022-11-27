@@ -25,46 +25,90 @@ class Normalization(nn.Module):
         return add(mul(x, self.weight), self.bias)
 
 
-class BatchNorm1d(Normalization):
-    def __init__(self, num_features: int, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True, device=None,
-                 dtype=None):
-        super().__init__(nn.BatchNorm1d(num_features, eps, momentum, False, track_running_stats, device, dtype),
-                         [1, num_features, 1], affine)
+def _batchnorm_forward(self: nn.modules.batchnorm._BatchNorm, input: torch.Tensor):
+    self._check_input_dim(input)
+
+    if self.momentum is not None:
+        ema_fac = self.momentum
+    else:
+        if self.training and self.track_running_stats and self.num_batches_tracked is not None:
+            self.num_batches_tracked.add_(1)
+            ema_fac = 1.0 / float(self.num_batches_tracked)
+        else:
+            ema_fac = 0.0
+
+    bn_training = self.training or ((self.running_mean is None) and (self.running_var is None))
+
+    return F.batch_norm(input,
+                        self.running_mean if not self.training or self.track_running_stats else None,
+                        self.running_var if not self.training or self.track_running_stats else None,
+                        self.weight, self.bias, bn_training, ema_fac, self.eps)
 
 
-class BatchNorm2d(Normalization):
-    def __init__(self, num_features: int, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True, device=None,
-                 dtype=None):
-        super().__init__(nn.BatchNorm2d(num_features, eps, momentum, False, track_running_stats, device, dtype),
-                         [1, num_features, 1, 1], affine)
+class BatchNorm1d(nn.BatchNorm1d):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return _batchnorm_forward(self, input)
 
 
-class BatchNorm3d(Normalization):
-    def __init__(self, num_features: int, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True, device=None,
-                 dtype=None):
-        super().__init__(nn.BatchNorm3d(num_features, eps, momentum, False, track_running_stats, device, dtype),
-                         [1, num_features, 1, 1, 1], affine)
+class BatchNorm2d(nn.BatchNorm2d):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return _batchnorm_forward(self, input)
 
 
-class InstanceNorm1d(Normalization):
-    def __init__(self, num_features: int, eps=1e-05, momentum=0.1, affine=False, track_running_stats=False, device=None,
-                 dtype=None):
-        super().__init__(nn.InstanceNorm1d(num_features, eps, momentum, False, track_running_stats, device, dtype),
-                         [1, num_features, 1], affine)
+class BatchNorm3d(nn.BatchNorm3d):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return _batchnorm_forward(self, input)
 
 
-class InstanceNorm2d(Normalization):
-    def __init__(self, num_features: int, eps=1e-05, momentum=0.1, affine=False, track_running_stats=False, device=None,
-                 dtype=None):
-        super().__init__(nn.InstanceNorm2d(num_features, eps, momentum, False, track_running_stats, device, dtype),
-                         [1, num_features, 1, 1], affine)
+class LazyBatchNorm1d(nn.LazyBatchNorm1d):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return _batchnorm_forward(self, input)
 
 
-class InstanceNorm3d(Normalization):
-    def __init__(self, num_features: int, eps=1e-05, momentum=0.1, affine=False, track_running_stats=False, device=None,
-                 dtype=None):
-        super().__init__(nn.InstanceNorm3d(num_features, eps, momentum, False, track_running_stats, device, dtype),
-                         [1, num_features, 1, 1, 1], affine)
+class LazyBatchNorm2d(nn.LazyBatchNorm2d):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return _batchnorm_forward(self, input)
+
+
+class LazyBatchNorm3d(nn.LazyBatchNorm3d):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return _batchnorm_forward(self, input)
+
+
+class InstanceNorm1d(nn.InstanceNorm1d):
+    def _apply_instance_norm(self, input):
+        return F.instance_norm(input, self.running_mean, self.running_var, self.weight, self.bias,
+                               self.training or not self.track_running_stats, self.momentum, self.eps)
+
+
+class InstanceNorm2d(nn.InstanceNorm2d):
+    def _apply_instance_norm(self, input):
+        return F.instance_norm(input, self.running_mean, self.running_var, self.weight, self.bias,
+                               self.training or not self.track_running_stats, self.momentum, self.eps)
+
+
+class InstanceNorm3d(nn.InstanceNorm3d):
+    def _apply_instance_norm(self, input):
+        return F.instance_norm(input, self.running_mean, self.running_var, self.weight, self.bias,
+                               self.training or not self.track_running_stats, self.momentum, self.eps)
+
+
+class LazyInstanceNorm1d(nn.LazyInstanceNorm1d):
+    def _apply_instance_norm(self, input):
+        return F.instance_norm(input, self.running_mean, self.running_var, self.weight, self.bias,
+                               self.training or not self.track_running_stats, self.momentum, self.eps)
+
+
+class LazyInstanceNorm2d(nn.LazyInstanceNorm2d):
+    def _apply_instance_norm(self, input):
+        return F.instance_norm(input, self.running_mean, self.running_var, self.weight, self.bias,
+                               self.training or not self.track_running_stats, self.momentum, self.eps)
+
+
+class LazyInstanceNorm3d(nn.LazyInstanceNorm3d):
+    def _apply_instance_norm(self, input):
+        return F.instance_norm(input, self.running_mean, self.running_var, self.weight, self.bias,
+                               self.training or not self.track_running_stats, self.momentum, self.eps)
 
 
 class _LayerNorm(nn.Module):

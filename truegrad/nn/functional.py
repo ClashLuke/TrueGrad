@@ -8,7 +8,7 @@ import torch.autograd
 from torch import Tensor, nn
 from torch.nn import functional as F, grad
 
-from truegrad.functional import add, einsum, matmul, mul
+from truegrad.functional import add, einsum, matmul, mul, reshape
 
 _torch_functional = {k: getattr(F, k) for k in dir(F)}
 _torch = {k: getattr(torch, k) for k in dir(torch)}
@@ -215,9 +215,9 @@ def batch_norm(input: Tensor, running_mean: typing.Optional[Tensor],
                eps: float = 1e-05):
     input = F.batch_norm(input, running_mean, running_var, None, None, training, momentum, eps)
     if weight is not None:
-        input = mul(input, weight)
+        input = mul(input, reshape(weight, (1, -1,) + (1,) * (input.ndim - 2)))
     if bias is not None:
-        input = add(input, bias)
+        input = add(input, reshape(bias, (1, -1,) + (1,) * (input.ndim - 2)))
     return input
 
 
@@ -500,9 +500,9 @@ def instance_norm(input: Tensor, running_mean: typing.Optional[Tensor] = None,
                   eps: float = 1e-05):
     x = F.instance_norm(input, running_mean, running_var, use_input_stats=use_input_stats, momentum=momentum, eps=eps)
     if weight is not None:
-        x = mul(x, weight)
+        x = mul(x, reshape(weight, (1, -1,) + (1,) * (input.ndim - 2)))
     if bias is not None:
-        x = add(x, bias)
+        x = add(x, reshape(bias, (1, -1,) + (1,) * (input.ndim - 2)))
     return x
 
 
