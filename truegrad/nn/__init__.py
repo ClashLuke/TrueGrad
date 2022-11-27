@@ -5,7 +5,9 @@ import torch.nn as nn
 from torch.utils._pytree import tree_map
 
 from truegrad.functional import add, gather, mul, wrap
-from truegrad.nn import functional as F
+from truegrad.nn import functional
+
+F = functional
 
 
 class Normalization(nn.Module):
@@ -150,7 +152,7 @@ class LayerNorm3d(LayerNorm):
 class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True) -> None:
         super(Linear, self).__init__()
-        self.weight = nn.Parameter(torch.randn((in_features, out_features)) / in_features ** 0.5)
+        self.weight = nn.Parameter(torch.randn((out_features, in_features)) / in_features ** 0.5)
         self.bias = nn.Parameter(torch.zeros((out_features,))) if bias else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

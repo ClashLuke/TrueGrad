@@ -1,3 +1,4 @@
+import typing
 from typing import Any, Callable, List, Tuple
 
 import torch
@@ -156,6 +157,64 @@ class ReshapeFn(torch.autograd.Function):
         return dy.reshape(ctx.original_shape), None
 
 
+class TransposeFn(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, weight: torch.Tensor, dims: typing.List[int]) -> torch.Tensor:
+        out = TrueGradTensor(weight.transpose(*dims).detach().requires_grad_(True))
+        if weight.requires_grad:
+            ctx.save_for_backward(weight)
+            ctx.out = out
+            ctx.dims = dims
+        return out
+
+    @staticmethod
+    def backward(ctx, dy: torch.Tensor) -> Tuple[None, torch.Tensor]:
+        if not ctx.saved_tensors:
+            return None, None
+        wgt, = ctx.saved_tensors
+        if ctx.out.sum_grad_squared is not None:
+            wgt.sum_grad_squared = ctx.out.sum_grad_squared.transpose(*ctx.dims)
+        return dy.transpose(*ctx.dims), None
+
+
+class ChunkFn(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, weight: torch.Tensor, chunks: int, dim: int):
+        out = tuple(TrueGradTensor(c) for c in weight.chunk(chunks, dim))
+        if weight.requires_grad:
+            ctx.save_for_backward(weight)
+            ctx.out = out
+            ctx.dim = dim
+        return out
+
+    @staticmethod
+    def backward(ctx, *dy: torch.Tensor):
+        if not ctx.saved_tensors:
+            return None, None, None
+        wgt, = ctx.saved_tensors
+        wgt.sum_grad_squared = torch.cat([o.sum_grad_squared for o in ctx.out], dim=ctx.dim)
+        return torch.cat(dy, dim=ctx.dim), None, None
+
+
+class SplitFn(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, weight: torch.Tensor, split_size: int, dim: int):
+        out = tuple(TrueGradTensor(c) for c in weight.split(split_size, dim))
+        if weight.requires_grad:
+            ctx.save_for_backward(weight)
+            ctx.out = out
+            ctx.dim = dim
+        return out
+
+    @staticmethod
+    def backward(ctx, *dy: torch.Tensor):
+        if not ctx.saved_tensors:
+            return None, None, None
+        wgt, = ctx.saved_tensors
+        wgt.sum_grad_squared = torch.cat([o.sum_grad_squared for o in ctx.out], dim=ctx.dim)
+        return torch.cat(dy, dim=ctx.dim), None, None
+
+
 class ExpandFn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, weight: torch.Tensor, new_shape: List[int]) -> torch.Tensor:
@@ -221,6 +280,9 @@ add = AddFn.apply
 einsum = EinsumFn.apply
 gather = GatherFn.apply
 reshape = ReshapeFn.apply
+transpose = TransposeFn.apply
+chunk = ChunkFn.apply
+split = SplitFn.apply
 expand = ExpandFn.apply
 wrap = WrapFn.apply
 

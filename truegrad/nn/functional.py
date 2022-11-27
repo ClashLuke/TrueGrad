@@ -8,7 +8,7 @@ import torch.autograd
 from torch import Tensor, nn
 from torch.nn import functional as F, grad
 
-from truegrad.functional import add, einsum, matmul, mul, reshape
+from truegrad.functional import add, chunk, einsum, matmul, mul, reshape, split, transpose
 
 _torch_functional = {k: getattr(F, k) for k in dir(F)}
 _torch = {k: getattr(torch, k) for k in dir(torch)}
@@ -551,7 +551,7 @@ def leaky_relu_(input: Tensor, negative_slope: float = 0.01):
 
 @call_torch
 def linear(input: Tensor, weight: Tensor, bias: Optional[Tensor]):
-    input = matmul(input, weight)
+    input = matmul(input, transpose(weight, (0, 1)))
     if bias is None:
         return input
     return add(input, bias)
@@ -641,21 +641,21 @@ def _in_projection_packed(
     if k is v:
         if q is k:
             # self-attention
-            return linear(q, w, b).chunk(3, dim=-1)
+            return linear(q, w, b).chunk(3, -1)
         else:
             # encoder-decoder attention
-            w_q, w_kv = w.split([E, E * 2])
+            w_q, w_kv = split(w, [E, E * 2], 0)
             if b is None:
                 b_q = b_kv = None
             else:
-                b_q, b_kv = b.split([E, E * 2])
-            return (linear(q, w_q, b_q),) + linear(k, w_kv, b_kv).chunk(2, dim=-1)
+                b_q, b_kv = split(b, [E, E * 2], 0)
+            return (linear(q, w_q, b_q),) + linear(k, w_kv, b_kv).chunk(2, -1)
     else:
-        w_q, w_k, w_v = w.chunk(3)
+        w_q, w_k, w_v = chunk(w, 3, 0)
         if b is None:
             b_q = b_k = b_v = None
         else:
-            b_q, b_k, b_v = b.chunk(3)
+            b_q, b_k, b_v = chunk(b, 3, 0)
         return linear(q, w_q, b_q), linear(k, w_k, b_k), linear(v, w_v, b_v)
 
 
@@ -956,16 +956,18 @@ def multi_head_attention_forward(query: Tensor, key: Tensor, value: Tensor, embe
     # compute in-projection
     #
     if not use_separate_proj_weight:
+        print("is packed")
         assert in_proj_weight is not None, "use_separate_proj_weight is False but in_proj_weight is None"
         q, k, v = _in_projection_packed(query, key, value, in_proj_weight, in_proj_bias)
     else:
+        print("not packed")
         assert q_proj_weight is not None, "use_separate_proj_weight is True but q_proj_weight is None"
         assert k_proj_weight is not None, "use_separate_proj_weight is True but k_proj_weight is None"
         assert v_proj_weight is not None, "use_separate_proj_weight is True but v_proj_weight is None"
         if in_proj_bias is None:
             b_q = b_k = b_v = None
         else:
-            b_q, b_k, b_v = in_proj_bias.chunk(3)
+            b_q, b_k, b_v = chunk(in_proj_bias, 3, 0)
         q, k, v = _in_projection(query, key, value, q_proj_weight, k_proj_weight, v_proj_weight, b_q, b_k, b_v)
 
     # prep attention mask
