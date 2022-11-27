@@ -1,7 +1,7 @@
 import torch
-from torch.nn import functional as torch_func
 
-from truegrad.nn import TrueGradParameter, functional as tg_func
+import truegrad
+from truegrad.nn import TrueGradParameter
 
 
 def patch_model(model: torch.nn.Module, recurse: bool = True):
@@ -17,8 +17,8 @@ def patch_model(model: torch.nn.Module, recurse: bool = True):
 
 
 def patch_torch():
-    tg_dir = dir(tg_func)
-    for name in dir(torch_func):
+    tg_dir = dir(truegrad.nn)
+    for name in dir(torch.nn):
         if name not in tg_dir:
             continue
-        setattr(torch, name, getattr(tg_func, name))
+        setattr(torch.nn, name, getattr(truegrad.nn, name))
