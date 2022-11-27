@@ -16,9 +16,20 @@ def patch_model(model: torch.nn.Module, recurse: bool = True):
             _apply_fn(mod)
 
 
-def patch_torch():
-    tg_dir = dir(truegrad.nn)
-    for name in dir(torch.nn):
+def _patch(tg, th):
+    tg_dir = dir(tg)
+    for name in dir(th):
         if name not in tg_dir:
             continue
-        setattr(torch.nn, name, getattr(truegrad.nn, name))
+        item = getattr(tg, name)
+        if not hasattr(item, "__module__"):
+            continue
+        if item.__module__ != tg.__name__:
+            continue
+        setattr(th, name, item)
+
+
+def patch_torch():
+    _patch(truegrad.nn.functional, torch.nn.functional)
+    _patch(truegrad.nn.functional, torch)
+    _patch(truegrad.nn, torch.nn)
