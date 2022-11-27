@@ -956,11 +956,9 @@ def multi_head_attention_forward(query: Tensor, key: Tensor, value: Tensor, embe
     # compute in-projection
     #
     if not use_separate_proj_weight:
-        print("is packed")
         assert in_proj_weight is not None, "use_separate_proj_weight is False but in_proj_weight is None"
         q, k, v = _in_projection_packed(query, key, value, in_proj_weight, in_proj_bias)
     else:
-        print("not packed")
         assert q_proj_weight is not None, "use_separate_proj_weight is True but q_proj_weight is None"
         assert k_proj_weight is not None, "use_separate_proj_weight is True but k_proj_weight is None"
         assert v_proj_weight is not None, "use_separate_proj_weight is True but v_proj_weight is None"
