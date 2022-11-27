@@ -1,11 +1,12 @@
-from typing import Any, List, Tuple, Union
+from typing import Any, List
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils._pytree import tree_map
 
-from truegrad.functional import add, gather, matmul, mul
+from truegrad.functional import add, gather, matmul, mul, wrap
+from truegrad.nn import functional as F
 
 
 class Normalization(nn.Module):
@@ -132,40 +133,6 @@ modules = (Embedding, Linear, LayerNorm, LayerNorm1d, LayerNorm2d, LayerNorm3d, 
            InstanceNorm3d, BatchNorm1d, BatchNorm2d, BatchNorm3d)
 
 
-class _WrapFn(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, out, fn, args, kwargs) -> torch.Tensor:
-        ctx.fn = fn
-        ctx.args = args
-        ctx.kwargs = kwargs
-        return torch.zeros_like(out)
-
-    @staticmethod
-    def backward(ctx, dy: torch.Tensor) -> Tuple[None, None, None, None]:
-        def _square(x: Union[torch.Tensor, None]):
-            if isinstance(x, torch.nn.Parameter):
-                x = x.data
-            if not isinstance(x, torch.Tensor) or not torch.is_floating_point(x):
-                return x
-            x = x.detach().square()
-            x.requires_grad_(True)
-            return x
-
-        args = tree_map(_square, ctx.args)
-        kwargs = tree_map(_square, ctx.kwargs)
-        with torch.enable_grad():
-            out = ctx.fn(args, kwargs)
-            torch.autograd.backward(out, tree_map(_square, dy))
-        for p, a in zip(list(ctx.args) + list(ctx.kwargs.values()), list(args) + list(kwargs.values())):
-            if not isinstance(p, torch.nn.Parameter):
-                continue
-            if hasattr(p, "sum_grad_squared") and p.sum_grad_squared is not None:
-                p.sum_grad_squared = p.sum_grad_squared + a.grad
-            else:
-                p.sum_grad_squared = a.grad
-        return None, None, None, None
-
-
 def is_tgparam(param: nn.Parameter):
     if isinstance(param, TrueGradParameter):
         return True
@@ -207,7 +174,7 @@ class TrueGradParameter(nn.Parameter):
                 a.activated = False
         if not isinstance(out, torch.Tensor):
             return out
-        return out + _WrapFn.apply(out, base, args, kwargs)
+        return wrap(base, args, kwargs)
 
 
 def _unpack(x: Any) -> Any:

@@ -1,6 +1,7 @@
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import torch
+from torch.utils._pytree import tree_map
 
 
 class MulFn(torch.autograd.Function):
@@ -126,12 +127,53 @@ class ExpandFn(torch.autograd.Function):
         return dy.sum(ctx.summed)
 
 
+class WrapFn(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, fn, args, kwargs) -> torch.Tensor:
+        ctx.fn = fn
+        ctx.args = args
+        ctx.kwargs = kwargs
+        return fn(*args, **kwargs)
+
+    @staticmethod
+    def backward(ctx, dy: torch.Tensor) -> Tuple[None, None, None, None]:
+        def _backward(fn: Callable[[torch.Tensor], torch.Tensor], attr: str):
+            def _fn(x: torch.Tensor):
+                if isinstance(x, torch.nn.Parameter):
+                    x = x.data
+                if not isinstance(x, torch.Tensor) or not torch.is_floating_point(x):
+                    return x
+                x = fn(x.detach())
+                x.requires_grad_(True)
+                return x
+
+            args = tree_map(_fn, ctx.args)
+            kwargs = tree_map(_fn, ctx.kwargs)
+
+            with torch.enable_grad():
+                out = ctx.fn(args, kwargs)
+                torch.autograd.backward(out, tree_map(_fn, dy))
+
+            for p, a in zip(list(ctx.args) + list(ctx.kwargs.values()), list(args) + list(kwargs.values())):
+                if not isinstance(p, torch.nn.Parameter):
+                    continue
+                if hasattr(p, attr) and getattr(p, attr) is not None:
+                    a.grad = getattr(p, attr) + a.grad
+                setattr(p, attr, a.grad)
+
+        _backward(torch.square, "sum_grad_squared")
+        _backward(lambda x: x, "grad")
+
+        return None, None, None, None
+
+
 mul = MulFn.apply
 add = AddFn.apply
 einsum = EinsumFn.apply
 gather = GatherFn.apply
 reshape = ReshapeFn.apply
 expand = ExpandFn.apply
+wrap = WrapFn.apply
 
 
 def matmul(inp: torch.Tensor, wgt: torch.Tensor):
