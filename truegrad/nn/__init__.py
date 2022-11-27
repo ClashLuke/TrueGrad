@@ -1,11 +1,10 @@
 from typing import Any, List
 
-import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils._pytree import tree_map
 
-from truegrad.functional import add, gather, matmul, mul, wrap
+from truegrad.functional import add, gather, mul, wrap
 from truegrad.nn import functional as F
 
 
@@ -69,53 +68,49 @@ class InstanceNorm3d(Normalization):
 
 
 class _LayerNorm(nn.Module):
-    def __init__(self, dims: List[int], eps: float):
+    def __init__(self, dims: List[int], eps: float, broadcast: bool):
         super(_LayerNorm, self).__init__()
         self.dims = dims
         self.eps = eps
+        self.broadcast = broadcast
 
     def forward(self, x):
-        x = x - x.mean(self.dims, True)
-        return x / (self.eps + x.norm(2, self.dims, True)) * (np.prod([x.size(d) for d in self.dims]) - 1) ** 0.5
+        return F.layer_norm(x, self.dims, eps=self.eps, broadcast=self.broadcast)
 
 
 class LayerNorm(Normalization):
-    def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, device=None, dtype=None):
+    def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, device=None, dtype=None,
+                 broadcast: bool = False):
         if device is not None or dtype is not None:
             raise ValueError("device and dtype are not supported. Ensure both are set to None.")
-        super(LayerNorm, self).__init__(_LayerNorm([-i - 1 for i, dim in enumerate(normalized_shape) if dim != 1], eps),
+        super(LayerNorm, self).__init__(_LayerNorm([-i - 1 for i, dim in enumerate(normalized_shape) if dim != 1], eps,
+                                                   broadcast),
                                         normalized_shape, elementwise_affine)
 
 
 class LayerNorm1d(LayerNorm):
     def __init__(self, num_features: int, eps=1e-05, elementwise_affine=True, device=None, dtype=None):
-        super(LayerNorm1d, self).__init__([1, num_features, 1], eps, elementwise_affine, device, dtype)
+        super(LayerNorm1d, self).__init__([1, num_features, 1], eps, elementwise_affine, device, dtype, True)
 
 
 class LayerNorm2d(LayerNorm):
     def __init__(self, num_features: int, eps=1e-05, elementwise_affine=True, device=None, dtype=None):
-        super(LayerNorm2d, self).__init__([1, num_features, 1, 1], eps, elementwise_affine, device, dtype)
+        super(LayerNorm2d, self).__init__([1, num_features, 1, 1], eps, elementwise_affine, device, dtype, True)
 
 
 class LayerNorm3d(LayerNorm):
     def __init__(self, num_features: int, eps=1e-05, elementwise_affine=True, device=None, dtype=None):
-        super(LayerNorm3d, self).__init__([1, num_features, 1, 1, 1], eps, elementwise_affine, device, dtype)
+        super(LayerNorm3d, self).__init__([1, num_features, 1, 1, 1], eps, elementwise_affine, device, dtype, True)
 
 
 class Linear(nn.Module):
     def __init__(self, in_features: int, out_features: int, bias: bool = True) -> None:
         super(Linear, self).__init__()
         self.weight = nn.Parameter(torch.randn((in_features, out_features)) / in_features ** 0.5)
-        if bias:
-            self.bias = nn.Parameter(torch.zeros((out_features,)))
-        else:
-            self.bias = None
+        self.bias = nn.Parameter(torch.zeros((out_features,))) if bias else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = matmul(x, self.weight)
-        if self.bias is None:
-            return x
-        return add(x, self.bias)
+        return F.linear(x, self.weight, self.bias)
 
 
 class Embedding(nn.Module):
@@ -127,6 +122,30 @@ class Embedding(nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         return gather(input, self.weight)
+
+
+class Conv1d(nn.Conv1d):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        if self.padding_mode != 'zeros':
+            input = F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode)
+            self.padding = (0,)
+        return F.conv1d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+
+
+class Conv2d(nn.Conv2d):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        if self.padding_mode != 'zeros':
+            input = F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode)
+            self.padding = (0, 0)
+        return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+
+
+class Conv3d(nn.Conv3d):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        if self.padding_mode != 'zeros':
+            input = F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode)
+            self.padding = (0, 0, 0)
+        return F.conv3d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
 
 modules = (Embedding, Linear, LayerNorm, LayerNorm1d, LayerNorm2d, LayerNorm3d, InstanceNorm1d, InstanceNorm2d,
