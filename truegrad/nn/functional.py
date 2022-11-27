@@ -20,144 +20,189 @@ def no_parameter(fn: Callable):
         for k, v in kwargs.items():
             if isinstance(v, nn.Parameter):
                 raise ValueError(f"Function does not support parameters. Offending argument: {k}")
-        fn(**kwargs)
+        return fn(**kwargs)
+
+    return _fn
+
+
+_torch_functional = {k: getattr(F, k) for k in dir(F)}
+_inside_call = {}
+
+
+def call_torch(fn: Callable):
+    name = fn.__name__
+    _inside_call[name] = False
+
+    def _fn(*args, **kwargs):
+        if _inside_call[name]:
+            return _torch_functional[name](*args, **kwargs)
+        _inside_call[name] = True
+        out = fn(*args, **kwargs)
+        _inside_call[name] = False
+        return out
 
     return _fn
 
 
 @no_parameter
+@call_torch
 def avg_pool1d(input, kernel_size, stride=None, padding=0, ceil_mode=False, count_include_pad=True):
     return F.avg_pool1d(input, kernel_size, stride, padding, ceil_mode, count_include_pad)
 
 
 @no_parameter
+@call_torch
 def avg_pool2d(input, kernel_size, stride=None, padding=0, ceil_mode=False, count_include_pad=True,
                divisor_override=None):
     return F.avg_pool2d(input, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override)
 
 
 @no_parameter
+@call_torch
 def avg_pool3d(input, kernel_size, stride=None, padding=0, ceil_mode=False, count_include_pad=True,
                divisor_override=None):
     return F.avg_pool3d(input, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override)
 
 
 @no_parameter
+@call_torch
 def max_pool1d(input, kernel_size, stride=None, padding=0, dilation=1, ceil_mode=False, return_indices=False):
     return F.max_pool1d(input, kernel_size, stride, padding, dilation, ceil_mode, return_indices)
 
 
 @no_parameter
+@call_torch
 def max_pool2d(input, kernel_size, stride=None, padding=0, dilation=1, ceil_mode=False, return_indices=False):
     return F.max_pool2d(input, kernel_size, stride, padding, dilation, ceil_mode, return_indices)
 
 
 @no_parameter
+@call_torch
 def max_pool3d(input, kernel_size, stride=None, padding=0, dilation=1, ceil_mode=False, return_indices=False):
     return F.max_pool3d(input, kernel_size, stride, padding, dilation, ceil_mode, return_indices)
 
 
 @no_parameter
+@call_torch
 def max_pool1d_with_indices(input: Tensor, kernel_size, stride=None, padding=0,
                             dilation=1, ceil_mode: bool = False, return_indices: bool = False):
     return F.max_pool1d_with_indices(input, kernel_size, stride, padding, dilation, ceil_mode, return_indices)
 
 
 @no_parameter
+@call_torch
 def max_pool2d_with_indices(input: Tensor, kernel_size, stride=None, padding=0,
                             dilation=1, ceil_mode: bool = False, return_indices: bool = False):
     return F.max_pool2d_with_indices(input, kernel_size, stride, padding, dilation, ceil_mode, return_indices)
 
 
 @no_parameter
+@call_torch
 def max_pool3d_with_indices(input: Tensor, kernel_size, stride=None, padding=0,
                             dilation=1, ceil_mode: bool = False, return_indices: bool = False):
     return F.max_pool3d_with_indices(input, kernel_size, stride, padding, dilation, ceil_mode, return_indices)
 
 
 @no_parameter
+@call_torch
 def max_unpool1d(input, indices, kernel_size, stride=None, padding=0, output_size=None):
     return F.max_unpool1d(input, indices, kernel_size, stride, padding, output_size)
 
 
 @no_parameter
+@call_torch
 def max_unpool2d(input, indices, kernel_size, stride=None, padding=0, output_size=None):
     return F.max_unpool2d(input, indices, kernel_size, stride, padding, output_size)
 
 
 @no_parameter
+@call_torch
 def max_unpool3d(input, indices, kernel_size, stride=None, padding=0, output_size=None):
     return F.max_unpool3d(input, indices, kernel_size, stride, padding, output_size)
 
 
 @no_parameter
+@call_torch
 def lp_pool1d(input, norm_type, kernel_size, stride=None, ceil_mode=False):
     return F.lp_pool1d(input, norm_type, kernel_size, stride, ceil_mode)
 
 
 @no_parameter
+@call_torch
 def lp_pool2d(input, norm_type, kernel_size, stride=None, ceil_mode=False):
     return F.lp_pool2d(input, norm_type, kernel_size, stride, ceil_mode)
 
 
 @no_parameter
+@call_torch
 def adaptive_max_pool1d(input, output_size, return_indices=False):
     return F.adaptive_max_pool1d(input, output_size, return_indices)
 
 
 @no_parameter
+@call_torch
 def adaptive_max_pool2d(input, output_size, return_indices=False):
     return F.adaptive_max_pool2d(input, output_size, return_indices)
 
 
 @no_parameter
+@call_torch
 def adaptive_max_pool3d(input, output_size, return_indices=False):
     return F.adaptive_max_pool3d(input, output_size, return_indices)
 
 
 @no_parameter
+@call_torch
 def adaptive_max_pool1d_with_indices(input: Tensor, output_size, return_indices: bool = False):
     return F.adaptive_max_pool1d_with_indices(input, output_size, return_indices)
 
 
 @no_parameter
+@call_torch
 def adaptive_max_pool2d_with_indices(input: Tensor, output_size, return_indices: bool = False):
     return F.adaptive_max_pool2d_with_indices(input, output_size, return_indices)  #
 
 
 @no_parameter
+@call_torch
 def adaptive_max_pool3d_with_indices(input: Tensor, output_size, return_indices: bool = False):
     return F.adaptive_max_pool3d_with_indices(input, output_size, return_indices)
 
 
 @no_parameter
+@call_torch
 def adaptive_avg_pool1d(input, output_size):
     return F.adaptive_avg_pool1d(input, output_size)
 
 
 @no_parameter
+@call_torch
 def adaptive_avg_pool2d(input, output_size):
     return F.adaptive_avg_pool2d(input, output_size)
 
 
 @no_parameter
+@call_torch
 def adaptive_avg_pool3d(input, output_size):
     return F.adaptive_avg_pool3d(input, output_size)
 
 
 @no_parameter
+@call_torch
 def fractional_max_pool2d(input, kernel_size, output_size=None, output_ratio=None, return_indices=False,
                           _random_samples=None):
     return F.fractional_max_pool2d(input, kernel_size, output_size, output_ratio, return_indices, _random_samples)
 
 
 @no_parameter
+@call_torch
 def fractional_max_pool3d(input, kernel_size, output_size=None, output_ratio=None, return_indices=False,
                           _random_samples=None):
     return F.fractional_max_pool3d(input, kernel_size, output_size, output_ratio, return_indices, _random_samples)
 
 
 @no_parameter
+@call_torch
 def fractional_max_pool2d_with_indices(input: Tensor, kernel_size, output_size=None,
                                        output_ratio=None, return_indices: bool = False,
                                        _random_samples: typing.Optional[Tensor] = None):
@@ -166,6 +211,7 @@ def fractional_max_pool2d_with_indices(input: Tensor, kernel_size, output_size=N
 
 
 @no_parameter
+@call_torch
 def fractional_max_pool3d_with_indices(input: Tensor, kernel_size, output_size=None,
                                        output_ratio=None, return_indices: bool = False,
                                        _random_samples: typing.Optional[Tensor] = None):
@@ -174,15 +220,18 @@ def fractional_max_pool3d_with_indices(input: Tensor, kernel_size, output_size=N
 
 
 @no_parameter
+@call_torch
 def affine_grid(theta: Tensor, size: typing.List[int], align_corners: typing.Optional[bool] = None):
     return F.affine_grid(theta, size, align_corners)
 
 
 @no_parameter
+@call_torch
 def alpha_dropout(input: Tensor, p: float = 0.5, training: bool = False, inplace: bool = False):
     return F.alpha_dropout(input, p, training, inplace)
 
 
+@call_torch
 def batch_norm(input: Tensor, running_mean: typing.Optional[Tensor],
                running_var: typing.Optional[Tensor], weight: typing.Optional[Tensor] = None,
                bias: typing.Optional[Tensor] = None, training: bool = False, momentum: float = 0.1,
@@ -195,6 +244,7 @@ def batch_norm(input: Tensor, running_mean: typing.Optional[Tensor],
     return input
 
 
+@call_torch
 def bilinear(input1: Tensor, input2: Tensor, weight: Tensor, bias: typing.Optional[Tensor] = None):
     batch_dims = ''.join(chr(ord('a') + i) for i in range(input1.ndim - 1))
     x = einsum(f'{batch_dims}x,{batch_dims}y,zxy->{batch_dims}z', input1, input2, weight)
@@ -204,6 +254,7 @@ def bilinear(input1: Tensor, input2: Tensor, weight: Tensor, bias: typing.Option
 
 
 @no_parameter
+@call_torch
 def binary_cross_entropy(input: Tensor, target: Tensor, weight: typing.Optional[Tensor] = None,
                          size_average: typing.Optional[bool] = None, reduce: typing.Optional[bool] = None,
                          reduction: str = "mean"):
@@ -211,6 +262,7 @@ def binary_cross_entropy(input: Tensor, target: Tensor, weight: typing.Optional[
 
 
 @no_parameter
+@call_torch
 def binary_cross_entropy_with_logits(input: Tensor, target: Tensor,
                                      weight: typing.Optional[Tensor] = None,
                                      size_average: typing.Optional[bool] = None, reduce: typing.Optional[bool] = None,
@@ -219,16 +271,19 @@ def binary_cross_entropy_with_logits(input: Tensor, target: Tensor,
 
 
 @no_parameter
+@call_torch
 def celu(input: Tensor, alpha: float = 1.0, inplace: bool = False):
     return F.celu(input, alpha, inplace)
 
 
 @no_parameter
+@call_torch
 def celu_(input: Tensor, alpha: float = 1.0):
     return F.celu_(input, alpha)
 
 
 @no_parameter
+@call_torch
 def channel_shuffle(input: Tensor, groups: int):
     return F.channel_shuffle(input, groups)
 
@@ -263,24 +318,28 @@ class _ConvNdFn(torch.autograd.Function):
         return dx, dw, db, None
 
 
+@call_torch
 def _convnd(input: Tensor, weight: Tensor, bias: Optional[Tensor], dim: int, *args):
     if input.dim() != 3:
         raise ValueError(f"Input has {input.dim()} dimensions, but expected {dim + 2} dimensions for conv{dim}d.")
     return _ConvNdFn.apply(input, weight, bias, args)
 
 
+@call_torch
 def conv1d(input: Tensor, weight: Tensor, bias: Optional[Tensor] = None, stride: int = 1,
            padding: Union[str, int] = "valid",
            dilation: int = 1, groups: int = 1):
     return _convnd(input, weight, bias, 1, stride, padding, dilation, groups)
 
 
+@call_torch
 def conv2d(input: Tensor, weight: Tensor, bias: Optional[Tensor] = None, stride: int = 1,
            padding: Union[str, int] = "valid",
            dilation: int = 1, groups: int = 1):
     return _convnd(input, weight, bias, 2, stride, padding, dilation, groups)
 
 
+@call_torch
 def conv3d(input: Tensor, weight: Tensor, bias: Optional[Tensor] = None, stride: int = 1,
            padding: Union[str, int] = "valid",
            dilation: int = 1, groups: int = 1):
@@ -288,24 +347,28 @@ def conv3d(input: Tensor, weight: Tensor, bias: Optional[Tensor] = None, stride:
 
 
 @no_parameter
+@call_torch
 def conv_transpose1d(input: Tensor, weight: Tensor, bias: Optional[Tensor] = None, stride: int = 1, padding: int = 0,
                      output_padding: int = 0, groups: int = 1, dilation: int = 1):
     return F.conv_transpose1d(input, weight, bias, stride, padding, output_padding, groups, dilation)
 
 
 @no_parameter
+@call_torch
 def conv_transpose2d(input: Tensor, weight: Tensor, bias: Optional[Tensor] = None, stride: int = 1, padding: int = 0,
                      output_padding: int = 0, groups: int = 1, dilation: int = 1):
     return F.conv_transpose2d(input, weight, bias, stride, padding, output_padding, groups, dilation)
 
 
 @no_parameter
+@call_torch
 def conv_transpose3d(input: Tensor, weight: Tensor, bias: Optional[Tensor] = None, stride: int = 1, padding: int = 0,
                      output_padding: int = 0, groups: int = 1, dilation: int = 1):
     return F.conv_transpose3d(input, weight, bias, stride, padding, output_padding, groups, dilation)
 
 
 @no_parameter
+@call_torch
 def cosine_embedding_loss(input1: Tensor, input2: Tensor, target: Tensor, margin: float = 0,
                           size_average: typing.Optional[bool] = None, reduce: typing.Optional[bool] = None,
                           reduction: str = "mean"):
@@ -313,11 +376,13 @@ def cosine_embedding_loss(input1: Tensor, input2: Tensor, target: Tensor, margin
 
 
 @no_parameter
+@call_torch
 def cosine_similarity(x1: Tensor, x2: Tensor, dim: int = 1, eps: float = 1e-08):
     return F.cosine_similarity(x1, x2, dim, eps)
 
 
 @no_parameter
+@call_torch
 def cross_entropy(input: Tensor, target: Tensor, weight: typing.Optional[Tensor] = None,
                   size_average: typing.Optional[bool] = None, ignore_index: int = -100,
                   reduce: typing.Optional[bool] = None, reduction: str = "mean", label_smoothing: float = 0.0):
@@ -325,42 +390,50 @@ def cross_entropy(input: Tensor, target: Tensor, weight: typing.Optional[Tensor]
 
 
 @no_parameter
+@call_torch
 def ctc_loss(log_probs: Tensor, targets: Tensor, input_lengths: Tensor, target_lengths: Tensor,
              blank: int = 0, reduction: str = "mean", zero_infinity: bool = False):
     return F.ctc_loss(log_probs, targets, input_lengths, target_lengths, blank, reduction, zero_infinity)
 
 
 @no_parameter
+@call_torch
 def dropout(input: Tensor, p: float = 0.5, training: bool = True, inplace: bool = False):
     return F.dropout(input, p, training, inplace)
 
 
 @no_parameter
+@call_torch
 def dropout1d(input: Tensor, p: float = 0.5, training: bool = True, inplace: bool = False):
     return F.dropout1d(input, p, training, inplace)
 
 
 @no_parameter
+@call_torch
 def dropout2d(input: Tensor, p: float = 0.5, training: bool = True, inplace: bool = False):
     return F.dropout2d(input, p, training, inplace)
 
 
 @no_parameter
+@call_torch
 def dropout3d(input: Tensor, p: float = 0.5, training: bool = True, inplace: bool = False):
     return F.dropout3d(input, p, training, inplace)
 
 
 @no_parameter
+@call_torch
 def elu(input: Tensor, alpha: float = 1.0, inplace: bool = False):
     return F.elu(input, alpha, inplace)
 
 
 @no_parameter
+@call_torch
 def elu_(input: Tensor, alpha: float = 1.0):
     return F.elu_(input, alpha)
 
 
 @no_parameter
+@call_torch
 def embedding(input: Tensor, weight: Tensor, padding_idx: typing.Optional[int] = None,
               max_norm: typing.Optional[float] = None, norm_type: float = 2.0, scale_grad_by_freq: bool = False,
               sparse: bool = False):
@@ -368,6 +441,7 @@ def embedding(input: Tensor, weight: Tensor, padding_idx: typing.Optional[int] =
 
 
 @no_parameter
+@call_torch
 def embedding_bag(input: Tensor, weight: Tensor, offsets: typing.Optional[Tensor] = None,
                   max_norm: typing.Optional[float] = None, norm_type: float = 2, scale_grad_by_freq: bool = False,
                   mode: str = "mean", sparse: bool = False, per_sample_weights: typing.Optional[Tensor] = None,
@@ -377,38 +451,45 @@ def embedding_bag(input: Tensor, weight: Tensor, offsets: typing.Optional[Tensor
 
 
 @no_parameter
+@call_torch
 def feature_alpha_dropout(input: Tensor, p: float = 0.5, training: bool = False, inplace: bool = False):
     return F.feature_alpha_dropout(input, p, training, inplace)
 
 
 @no_parameter
+@call_torch
 def fold(input: Tensor, output_size, kernel_size, dilation=1, padding=0,
          stride=1):
     return F.fold(input, output_size, kernel_size, dilation, padding, stride)
 
 
 @no_parameter
+@call_torch
 def gaussian_nll_loss(input: Tensor, target: Tensor, var: Tensor, full: bool = False,
                       eps: float = 1e-06, reduction: str = "mean"):
     return F.gaussian_nll_loss(input, target, var, full, eps, reduction)
 
 
 @no_parameter
+@call_torch
 def gelu(input: Tensor, approximate='none'):
     return F.gelu(input, approximate)
 
 
 @no_parameter
+@call_torch
 def glu(input: Tensor, dim: int = -1):
     return F.glu(input, dim)
 
 
 @no_parameter
+@call_torch
 def grid_sample(input: Tensor, grid: Tensor, mode: str = bilinear, padding_mode: str = "zeros",
                 align_corners: typing.Optional[bool] = None):
     return F.grid_sample(input, grid, mode, padding_mode, align_corners)
 
 
+@call_torch
 def group_norm(input: Tensor, num_groups: int, weight: typing.Optional[Tensor] = None,
                bias: typing.Optional[Tensor] = None, eps: float = 1e-05):
     x = F.group_norm(input, num_groups, None, None, eps)
@@ -420,36 +501,43 @@ def group_norm(input: Tensor, num_groups: int, weight: typing.Optional[Tensor] =
 
 
 @no_parameter
+@call_torch
 def gumbel_softmax(logits: Tensor, tau: float = 1, hard: bool = False, eps: float = 1e-10, dim: int = -1):
     return F.gumbel_softmax(logits, tau, hard, eps, dim)
 
 
 @no_parameter
+@call_torch
 def hardshrink(input, lambd=0.5):
     return F.hardshrink(input, lambd)
 
 
 @no_parameter
+@call_torch
 def hardsigmoid(input: Tensor, inplace: bool = False):
     return F.hardsigmoid(input, inplace)
 
 
 @no_parameter
+@call_torch
 def hardswish(input: Tensor, inplace: bool = False):
     return F.hardswish(input, inplace)
 
 
 @no_parameter
+@call_torch
 def hardtanh(input: Tensor, min_val: float = -1.0, max_val: float = 1.0, inplace: bool = False):
     return F.hardtanh(input, min_val, max_val, inplace)
 
 
 @no_parameter
+@call_torch
 def hardtanh_(input: Tensor, min_val: float = -1.0, max_val: float = 1.0):
     return F.hardtanh_(input, min_val, max_val)
 
 
 @no_parameter
+@call_torch
 def hinge_embedding_loss(input: Tensor, target: Tensor, margin: float = 1.0,
                          size_average: typing.Optional[bool] = None, reduce: typing.Optional[bool] = None,
                          reduction: str = "mean"):
@@ -457,10 +545,12 @@ def hinge_embedding_loss(input: Tensor, target: Tensor, margin: float = 1.0,
 
 
 @no_parameter
+@call_torch
 def huber_loss(input: Tensor, target: Tensor, reduction: str = "mean", delta: float = 1.0):
     return F.huber_loss(input, target, reduction, delta)
 
 
+@call_torch
 def instance_norm(input: Tensor, running_mean: typing.Optional[Tensor] = None,
                   running_var: typing.Optional[Tensor] = None, weight: typing.Optional[Tensor] = None,
                   bias: typing.Optional[Tensor] = None, use_input_stats: bool = True, momentum: float = 0.1,
@@ -474,6 +564,7 @@ def instance_norm(input: Tensor, running_mean: typing.Optional[Tensor] = None,
 
 
 @no_parameter
+@call_torch
 def interpolate(input: Tensor, size: typing.Optional[int] = None,
                 scale_factor: typing.Optional[typing.List[float]] = None, mode: str = "nearest",
                 align_corners: typing.Optional[bool] = None, recompute_scale_factor: typing.Optional[bool] = None,
@@ -482,17 +573,20 @@ def interpolate(input: Tensor, size: typing.Optional[int] = None,
 
 
 @no_parameter
+@call_torch
 def kl_div(input: Tensor, target: Tensor, size_average: typing.Optional[bool] = None,
            reduce: typing.Optional[bool] = None, reduction: str = "mean", log_target: bool = False):
     return F.kl_div(input, target, size_average, reduce, reduction, log_target)
 
 
 @no_parameter
+@call_torch
 def l1_loss(input: Tensor, target: Tensor, size_average: typing.Optional[bool] = None,
             reduce: typing.Optional[bool] = None, reduction: str = "mean"):
     return F.l1_loss(input, target, size_average, reduce, reduction)
 
 
+@call_torch
 def layer_norm(input: Tensor, normalized_shape: typing.List[int], weight: typing.Optional[Tensor] = None,
                bias: typing.Optional[Tensor] = None, eps: float = 1e-05, broadcast: bool = True):
     if broadcast:
@@ -506,15 +600,18 @@ def layer_norm(input: Tensor, normalized_shape: typing.List[int], weight: typing
 
 
 @no_parameter
+@call_torch
 def leaky_relu(input: Tensor, negative_slope: float = 0.01, inplace: bool = False):
     return F.leaky_relu(input, negative_slope, inplace)
 
 
 @no_parameter
+@call_torch
 def leaky_relu_(input: Tensor, negative_slope: float = 0.01):
     return F.leaky_relu_(input, negative_slope)
 
 
+@call_torch
 def linear(input: Tensor, weight: Tensor, bias: Optional[Tensor]):
     input = matmul(input, weight)
     if bias is None:
@@ -523,34 +620,40 @@ def linear(input: Tensor, weight: Tensor, bias: Optional[Tensor]):
 
 
 @no_parameter
+@call_torch
 def local_response_norm(input: Tensor, size: int, alpha: float = 0.0001, beta: float = 0.75, k: float = 1.0):
     return F.local_response_norm(input, size, alpha, beta, k)
 
 
 @no_parameter
+@call_torch
 def log_softmax(input: Tensor, dim: typing.Optional[int] = None, _stacklevel: int = 3,
                 dtype: typing.Optional[int] = None):
     return F.log_softmax(input, dim, _stacklevel, dtype)
 
 
 @no_parameter
+@call_torch
 def logsigmoid(input: Tensor):
     return F.logsigmoid(input)
 
 
 @no_parameter
+@call_torch
 def lp_pool1d(input: Tensor, norm_type: typing.Union[int, float], kernel_size: int, stride=None,
               ceil_mode: bool = False):
     return F.lp_pool1d(input, norm_type, kernel_size, stride, ceil_mode)
 
 
 @no_parameter
+@call_torch
 def lp_pool2d(input: Tensor, norm_type: typing.Union[int, float], kernel_size, stride=None,
               ceil_mode: bool = False):
     return F.lp_pool2d(input, norm_type, kernel_size, stride, ceil_mode)
 
 
 @no_parameter
+@call_torch
 def margin_ranking_loss(input1: Tensor, input2: Tensor, target: Tensor, margin: float = 0,
                         size_average: typing.Optional[bool] = None, reduce: typing.Optional[bool] = None,
                         reduction: str = "mean"):
@@ -558,11 +661,13 @@ def margin_ranking_loss(input1: Tensor, input2: Tensor, target: Tensor, margin: 
 
 
 @no_parameter
+@call_torch
 def mish(input: Tensor, inplace: bool = False):
     return F.mish(input, inplace)
 
 
 @no_parameter
+@call_torch
 def mse_loss(input: Tensor, target: Tensor, size_average: typing.Optional[bool] = None,
              reduce: typing.Optional[bool] = None, reduction: str = "mean"):
     return F.mse_loss(input, target, size_average, reduce, reduction)
@@ -1068,6 +1173,7 @@ def multi_head_attention_forward(query: Tensor, key: Tensor, value: Tensor, embe
 
 
 @no_parameter
+@call_torch
 def multi_margin_loss(input: Tensor, target: Tensor, p: int = 1, margin: float = 1.0,
                       weight: typing.Optional[Tensor] = None, size_average: typing.Optional[bool] = None,
                       reduce: typing.Optional[bool] = None, reduction: str = "mean"):
@@ -1075,12 +1181,14 @@ def multi_margin_loss(input: Tensor, target: Tensor, p: int = 1, margin: float =
 
 
 @no_parameter
+@call_torch
 def multilabel_margin_loss(input: Tensor, target: Tensor, size_average: typing.Optional[bool] = None,
                            reduce: typing.Optional[bool] = None, reduction: str = "mean"):
     return F.multilabel_margin_loss(input, target, size_average, reduce, reduction)
 
 
 @no_parameter
+@call_torch
 def multilabel_soft_margin_loss(input: Tensor, target: Tensor, weight: typing.Optional[Tensor] = None,
                                 size_average: typing.Optional[bool] = None, reduce: typing.Optional[bool] = None,
                                 reduction: str = "mean"):
@@ -1088,6 +1196,7 @@ def multilabel_soft_margin_loss(input: Tensor, target: Tensor, weight: typing.Op
 
 
 @no_parameter
+@call_torch
 def nll_loss(input: Tensor, target: Tensor, weight: typing.Optional[Tensor] = None,
              size_average: typing.Optional[bool] = None, ignore_index: int = -100, reduce: typing.Optional[bool] = None,
              reduction: str = "mean"):
@@ -1095,43 +1204,51 @@ def nll_loss(input: Tensor, target: Tensor, weight: typing.Optional[Tensor] = No
 
 
 @no_parameter
+@call_torch
 def normalize(input: Tensor, p: float = 2.0, dim: int = 1, eps: float = 1e-12,
               out: typing.Optional[Tensor] = None):
     return F.normalize(input, p, dim, eps, out)
 
 
 @no_parameter
+@call_torch
 def one_hot(input: Tensor, p: float = 2.0, dim: int = 1, eps: float = 1e-12,
             out: typing.Optional[Tensor] = None):
     return F.one_hot(input, p, dim, eps, out)
 
 
 @no_parameter
+@call_torch
 def pad(input, pad, mode="constant", value=None):
     return F.pad(input, pad, mode, value)
 
 
 @no_parameter
+@call_torch
 def pairwise_distance(x1, x2, p=2.0, eps=1e-6, keepdim=False):
     return F.pairwise_distance(x1, x2, p, eps, keepdim)
 
 
 @no_parameter
+@call_torch
 def pdist(input, p=2.0):
     return F.pdist(input, p)
 
 
 @no_parameter
+@call_torch
 def pixel_shuffle(input: Tensor, upscale_factor: int):
     return F.pixel_shuffle(input, upscale_factor)
 
 
 @no_parameter
+@call_torch
 def pixel_unshuffle(input: Tensor, downscale_factor: int):
     return F.pixel_unshuffle(input, downscale_factor)
 
 
 @no_parameter
+@call_torch
 def poisson_nll_loss(input: Tensor, target: Tensor, log_input: bool = True, full: bool = False,
                      size_average: typing.Optional[bool] = None, eps: float = 1e-08,
                      reduce: typing.Optional[bool] = None, reduction: str = "mean"):
@@ -1139,118 +1256,140 @@ def poisson_nll_loss(input: Tensor, target: Tensor, log_input: bool = True, full
 
 
 @no_parameter
+@call_torch
 def prelu(input: Tensor, weight: Tensor):
     return F.prelu(input, weight)
 
 
 @no_parameter
+@call_torch
 def relu(input: Tensor, inplace: bool = False):
     return F.relu(input, inplace)
 
 
 @no_parameter
+@call_torch
 def relu6(input: Tensor, inplace: bool = False):
     return F.relu6(input, inplace)
 
 
 @no_parameter
+@call_torch
 def relu_(input: Tensor):
     return F.relu_(input)
 
 
 @no_parameter
+@call_torch
 def rrelu(input: Tensor, lower: float = 0.125, upper: float = 1 / 3, training: bool = False,
           inplace: bool = False):
     return F.rrelu(input, lower, upper, training, inplace)
 
 
 @no_parameter
+@call_torch
 def rrelu_(input: Tensor, lower: float = 0.125, upper: float = 1 / 3, training: bool = False):
     return F.rrelu_(input, lower, upper, training)
 
 
 @no_parameter
+@call_torch
 def selu(input: Tensor, inplace: bool = False):
     return F.selu(input, inplace)
 
 
 @no_parameter
+@call_torch
 def selu_(input: Tensor):
     return F.selu_(input)
 
 
 @no_parameter
+@call_torch
 def sigmoid(input):
     return F.sigmoid(input)
 
 
 @no_parameter
+@call_torch
 def silu(input: Tensor, inplace: bool = False):
     return F.silu(input, inplace)
 
 
 @no_parameter
+@call_torch
 def smooth_l1_loss(input: Tensor, target: Tensor, size_average: typing.Optional[bool] = None,
                    reduce: typing.Optional[bool] = None, reduction: str = "mean", beta: float = 1.0):
     return F.smooth_l1_loss(input, target, size_average, reduce, reduction, beta)
 
 
 @no_parameter
+@call_torch
 def soft_margin_loss(input: Tensor, target: Tensor, size_average: typing.Optional[bool] = None,
                      reduce: typing.Optional[bool] = None, reduction: str = "mean"):
     return F.soft_margin_loss(input, target, size_average, reduce, reduction)
 
 
 @no_parameter
+@call_torch
 def softmax(input: Tensor, dim: typing.Optional[int] = None, _stacklevel: int = 3,
             dtype: typing.Optional[int] = None):
     return F.softmax(input, dim, _stacklevel, dtype)
 
 
 @no_parameter
+@call_torch
 def softmin(input: Tensor, dim: typing.Optional[int] = None, _stacklevel: int = 3,
             dtype: typing.Optional[int] = None):
     return F.softmin(input, dim, _stacklevel, dtype)
 
 
 @no_parameter
+@call_torch
 def softplus(input: Tensor, dim: typing.Optional[int] = None, _stacklevel: int = 3,
              dtype: typing.Optional[int] = None):
     return F.softplus(input, dim, _stacklevel, dtype)
 
 
 @no_parameter
+@call_torch
 def softshrink(input: Tensor, dim: typing.Optional[int] = None, _stacklevel: int = 3,
                dtype: typing.Optional[int] = None):
     return F.softshrink(input, dim, _stacklevel, dtype)
 
 
 @no_parameter
+@call_torch
 def softsign(input):
     return F.softsign(input)
 
 
 @no_parameter
+@call_torch
 def tanh(input):
     return F.tanh(input)
 
 
 @no_parameter
+@call_torch
 def tanhshrink(input):
     return F.tanhshrink(input)
 
 
 @no_parameter
+@call_torch
 def threshold(input: Tensor, threshold: float, value: float, inplace: bool = False):
     return F.threshold(input, threshold, value, inplace)
 
 
 @no_parameter
+@call_torch
 def threshold_(input: Tensor, threshold: float, value: float):
     return F.threshold_(input, threshold, value)
 
 
 @no_parameter
+@call_torch
 def triplet_margin_loss(anchor: Tensor, positive: Tensor, negative: Tensor, margin: float = 1.0,
                         p: float = 2, eps: float = 1e-06, swap: bool = False,
                         size_average: typing.Optional[bool] = None, reduce: typing.Optional[bool] = None,
@@ -1259,6 +1398,7 @@ def triplet_margin_loss(anchor: Tensor, positive: Tensor, negative: Tensor, marg
 
 
 @no_parameter
+@call_torch
 def triplet_margin_with_distance_loss(anchor: Tensor, positive: Tensor, negative: Tensor,
                                       distance_function: typing.Union[
                                           typing.Callable[[Tensor, Tensor], Tensor], None] = None,
@@ -1268,20 +1408,24 @@ def triplet_margin_with_distance_loss(anchor: Tensor, positive: Tensor, negative
 
 
 @no_parameter
+@call_torch
 def unfold(input: Tensor, kernel_size, dilation=1, padding=0, stride=1):
     return F.unfold(input, kernel_size, dilation, padding, stride)
 
 
 @no_parameter
+@call_torch
 def upsample(input, size=None, scale_factor=None, mode="nearest", align_corners=None):
     return F.upsample(input, size, scale_factor, mode, align_corners)
 
 
 @no_parameter
+@call_torch
 def upsample_bilinear(input, size=None, scale_factor=None):
     return F.upsample_bilinear(input, size, scale_factor)
 
 
 @no_parameter
+@call_torch
 def upsample_nearest(input, size=None, scale_factor=None):
     return F.upsample_nearest(input, size, scale_factor)
