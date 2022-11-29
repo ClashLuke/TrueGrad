@@ -80,7 +80,7 @@ class TGAdamW(torch.optim.Optimizer):
                     adam_update = exp_avg / (exp_avg_sq / (1 - beta2 ** step)).sqrt().add_(group['eps'])
 
                 if group["graft"] and not do_adam:
-                    alpha = alpha * adam_update.norm() / update.norm()
+                    alpha = alpha * adam_update.norm() / update.norm().add_(group['eps'])
                 elif do_adam:
                     update = adam_update
 

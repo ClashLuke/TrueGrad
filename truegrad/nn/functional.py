@@ -1,43 +1,20 @@
-import functools
+import torch.autograd
+
 import math
 import typing
 import warnings
 from typing import Callable, List, Optional, Tuple, Union
 
 import torch.autograd
+import torch.autograd
 from torch import Tensor, nn
-from torch.nn import functional as F, grad
+from torch.nn import functional as F
 
-from truegrad.functional import add, chunk, einsum, matmul, mul, reshape, split, transpose
-
-_torch_functional = {k: getattr(F, k) for k in dir(F)}
-_torch = {k: getattr(torch, k) for k in dir(torch)}
-_inside_call = {}
-
-
-def call_torch(fn: Callable, name: Optional[str] = None):
-    if name is None:
-        name = fn.__name__
-    _inside_call[fn] = 0
-
-    def _fn(*args, **kwargs):
-        _inside_call[fn] += 1
-        if _inside_call[fn] == 1:
-            out = fn(*args, **kwargs)
-        elif _inside_call[fn] == 2:
-            out = _torch_functional[name](*args, **kwargs)
-        elif _inside_call[fn] == 3:
-            out = _torch[name](*args, **kwargs)
-        else:
-            raise ValueError
-        _inside_call[fn] -= 1
-        return out
-
-    return _fn
+from truegrad.functional import (add, chunk, convnd, einsum, mul, reshape, simple_wrap,
+                                 split)
 
 
 def no_parameter(fn: Callable):
-    @functools.partial(call_torch, name=fn.__name__)
     def _fn(*args, **kwargs):
         for i, arg in enumerate(args):
             if isinstance(arg, nn.Parameter):
@@ -208,7 +185,6 @@ def alpha_dropout(input: Tensor, p: float = 0.5, training: bool = False, inplace
     return F.alpha_dropout(input, p, training, inplace)
 
 
-@call_torch
 def batch_norm(input: Tensor, running_mean: typing.Optional[Tensor],
                running_var: typing.Optional[Tensor], weight: typing.Optional[Tensor] = None,
                bias: typing.Optional[Tensor] = None, training: bool = False, momentum: float = 0.1,
@@ -221,7 +197,6 @@ def batch_norm(input: Tensor, running_mean: typing.Optional[Tensor],
     return input
 
 
-@call_torch
 def bilinear(input1: Tensor, input2: Tensor, weight: Tensor, bias: typing.Optional[Tensor] = None):
     batch_dims = ''.join(chr(ord('a') + i) for i in range(input1.ndim - 1))
     x = einsum(f'{batch_dims}x,{batch_dims}y,zxy->{batch_dims}z', input1, input2, weight)
@@ -260,58 +235,24 @@ def channel_shuffle(input: Tensor, groups: int):
     return F.channel_shuffle(input, groups)
 
 
-class _ConvNdFn(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input: Tensor, weight: Tensor, bias: Optional[Tensor], args) -> torch.Tensor:
-        if weight.requires_grad:
-            ctx.save_for_backward(input, weight, bias)
-            ctx.args = args
-        dim = input.dim() - 2  # Batch, Feature, *Data
-        return getattr(F, f"conv{dim}d")(input, weight, bias, *args)
-
-    @staticmethod
-    def backward(ctx, dy: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], None]:
-        if not ctx.saved_tensors:
-            return None, None, None, None
-        inp, wgt, bias = ctx.saved_tensors
-        dim = inp.dim() - 2
-        summed = [0] + list(range(2, 2 + dim))
-
-        dx = getattr(grad, f"conv{dim}d_input")(inp.size(), wgt, dy, *ctx.args)
-        dw = getattr(grad, f"conv{dim}d_weight")(inp, wgt.size(), dy, *ctx.args)
-        db = None if bias is None else dy.sum(summed)
-
-        if isinstance(wgt, nn.Parameter) or isinstance(bias, nn.Parameter):
-            dy_sq = dy.square() * dy.size(0)
-        if isinstance(wgt, nn.Parameter):
-            wgt.sum_grad_squared = getattr(grad, f"conv{dim}d_weight")(inp.square(), wgt.size(), dy_sq, *ctx.args)
-        if isinstance(bias, nn.Parameter):
-            bias.sum_grad_squared = dy_sq.sum(summed)
-        return dx, dw, db, None
-
-
-@call_torch
 def _convnd(input: Tensor, weight: Tensor, bias: Optional[Tensor], dim: int, *args):
     if input.dim() != dim + 2:
         raise ValueError(f"Input has {input.dim()} dimensions, but expected {dim + 2} dimensions for conv{dim}d.")
-    return _ConvNdFn.apply(input, weight, bias, args)
+    return convnd(input, weight, bias, args)
 
 
-@call_torch
 def conv1d(input: Tensor, weight: Tensor, bias: Optional[Tensor] = None, stride: int = 1,
            padding: Union[str, int] = "valid",
            dilation: int = 1, groups: int = 1):
     return _convnd(input, weight, bias, 1, stride, padding, dilation, groups)
 
 
-@call_torch
 def conv2d(input: Tensor, weight: Tensor, bias: Optional[Tensor] = None, stride: int = 1,
            padding: Union[str, int] = "valid",
            dilation: int = 1, groups: int = 1):
     return _convnd(input, weight, bias, 2, stride, padding, dilation, groups)
 
 
-@call_torch
 def conv3d(input: Tensor, weight: Tensor, bias: Optional[Tensor] = None, stride: int = 1,
            padding: Union[str, int] = "valid",
            dilation: int = 1, groups: int = 1):
@@ -391,11 +332,12 @@ def elu_(input: Tensor, alpha: float = 1.0):
     return F.elu_(input, alpha)
 
 
-@no_parameter
 def embedding(input: Tensor, weight: Tensor, padding_idx: typing.Optional[int] = None,
               max_norm: typing.Optional[float] = None, norm_type: float = 2.0, scale_grad_by_freq: bool = False,
               sparse: bool = False):
-    return F.embedding(input, weight, padding_idx, max_norm, norm_type, scale_grad_by_freq, sparse)
+    args = [input, weight, padding_idx, max_norm, norm_type, scale_grad_by_freq, sparse]
+    out = F.embedding(*args)
+    return simple_wrap(F.embedding, out, *args)
 
 
 @no_parameter
@@ -440,7 +382,6 @@ def grid_sample(input: Tensor, grid: Tensor, mode: str = bilinear, padding_mode:
     return F.grid_sample(input, grid, mode, padding_mode, align_corners)
 
 
-@call_torch
 def group_norm(input: Tensor, num_groups: int, weight: typing.Optional[Tensor] = None,
                bias: typing.Optional[Tensor] = None, eps: float = 1e-05):
     x = F.group_norm(input, num_groups, None, None, eps)
@@ -493,7 +434,6 @@ def huber_loss(input: Tensor, target: Tensor, reduction: str = "mean", delta: fl
     return F.huber_loss(input, target, reduction, delta)
 
 
-@call_torch
 def instance_norm(input: Tensor, running_mean: typing.Optional[Tensor] = None,
                   running_var: typing.Optional[Tensor] = None, weight: typing.Optional[Tensor] = None,
                   bias: typing.Optional[Tensor] = None, use_input_stats: bool = True, momentum: float = 0.1,
@@ -526,7 +466,6 @@ def l1_loss(input: Tensor, target: Tensor, size_average: typing.Optional[bool] =
     return F.l1_loss(input, target, size_average, reduce, reduction)
 
 
-@call_torch
 def layer_norm(input: Tensor, normalized_shape: typing.List[int], weight: typing.Optional[Tensor] = None,
                bias: typing.Optional[Tensor] = None, eps: float = 1e-05, broadcast: bool = True):
     if broadcast:
@@ -549,9 +488,9 @@ def leaky_relu_(input: Tensor, negative_slope: float = 0.01):
     return F.leaky_relu_(input, negative_slope)
 
 
-@call_torch
 def linear(input: Tensor, weight: Tensor, bias: Optional[Tensor]):
-    input = matmul(input, transpose(weight, (0, 1)))
+    batch_dims = ''.join(chr(ord('a') + i) for i in range(input.ndim - 1))
+    input = einsum(f"{batch_dims}y,zy->{batch_dims}z", input, weight)
     if bias is None:
         return input
     return add(input, bias)

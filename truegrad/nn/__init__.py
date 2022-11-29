@@ -1,12 +1,13 @@
-from typing import Any, List
+from typing import List
 
 import torch
 import torch.nn as nn
-from torch.utils._pytree import tree_map
 
-from truegrad.functional import add, gather, mul, wrap
+from truegrad.functional import TrueGradParameter, add, gather, is_tgparam, mul
 from truegrad.nn import functional
 
+TrueGradParameter = TrueGradParameter
+is_tgparam = is_tgparam
 F = functional
 
 
@@ -114,14 +115,14 @@ class LazyInstanceNorm3d(nn.LazyInstanceNorm3d):
 
 
 class _LayerNorm(nn.Module):
-    def __init__(self, dims: List[int], eps: float, broadcast: bool):
+    def __init__(self, normalized_shape: List[int], eps: float, broadcast: bool):
         super(_LayerNorm, self).__init__()
-        self.dims = dims
+        self.normalized_shape = normalized_shape
         self.eps = eps
         self.broadcast = broadcast
 
     def forward(self, x):
-        return F.layer_norm(x, self.dims, eps=self.eps, broadcast=self.broadcast)
+        return F.layer_norm(x, self.normalized_shape, eps=self.eps, broadcast=self.broadcast)
 
 
 class LayerNorm(Normalization):
@@ -129,8 +130,9 @@ class LayerNorm(Normalization):
                  broadcast: bool = False):
         if device is not None or dtype is not None:
             raise ValueError("device and dtype are not supported. Ensure both are set to None.")
-        super(LayerNorm, self).__init__(_LayerNorm([-i - 1 for i, dim in enumerate(normalized_shape) if dim != 1], eps,
-                                                   broadcast),
+        if isinstance(normalized_shape, int):
+            normalized_shape = [normalized_shape]
+        super(LayerNorm, self).__init__(_LayerNorm(normalized_shape, eps, broadcast),
                                         normalized_shape, elementwise_affine)
 
 
@@ -159,15 +161,10 @@ class Linear(nn.Module):
         return F.linear(x, self.weight, self.bias)
 
 
-class Embedding(nn.Module):
-    def __init__(self, num_embeddings, embedding_dim, **kwargs):
-        if kwargs:
-            raise ValueError(f"{kwargs} are not supported.")
-        super(Embedding, self).__init__()
-        self.weight = nn.Parameter(torch.randn(num_embeddings, embedding_dim))
-
+class Embedding(nn.Embedding):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return gather(input, self.weight)
+        return F.embedding(input, self.weight, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq,
+                           self.sparse)
 
 
 class Conv1d(nn.Conv1d):
@@ -196,53 +193,3 @@ class Conv3d(nn.Conv3d):
 
 modules = (Embedding, Linear, LayerNorm, LayerNorm1d, LayerNorm2d, LayerNorm3d, InstanceNorm1d, InstanceNorm2d,
            InstanceNorm3d, BatchNorm1d, BatchNorm2d, BatchNorm3d)
-
-
-def is_tgparam(param: nn.Parameter):
-    if isinstance(param, TrueGradParameter):
-        return True
-    if isinstance(param, nn.Parameter) and hasattr(param, "activated"):
-        return True
-    return False
-
-
-_base_torch_function = nn.Parameter.__torch_function__
-
-
-class TrueGradParameter(nn.Parameter):
-    activated: bool
-
-    @staticmethod
-    def __new__(cls, data=None, requires_grad=True):
-        if data is None:
-            data = torch.zeros(())
-        out = torch.nn.Parameter._make_subclass(cls, data, requires_grad)
-        out.activated = False
-        return out
-
-    def __repr__(self):
-        return f"TrueGradParameter({self.data})"
-
-    @classmethod
-    def __torch_function__(cls, func, types, args=(), kwargs=None):
-        if kwargs is None:
-            kwargs = {}
-
-        def base(a, k):
-            return _base_torch_function(func, types, a, k)
-
-        if all(not is_tgparam(a) or a.activated for a in list(args) + list(kwargs.values())):
-            return base(args, kwargs)
-        out = base(tree_map(_unpack, args), tree_map(_unpack, kwargs))
-        for a in list(args) + list(kwargs.values()):
-            if is_tgparam(a):
-                a.activated = False
-        if not isinstance(out, torch.Tensor):
-            return out
-        return wrap(base, args, kwargs)
-
-
-def _unpack(x: Any) -> Any:
-    if is_tgparam(x) and not x.activated:
-        x.activated = True
-    return x
