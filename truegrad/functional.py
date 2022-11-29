@@ -122,7 +122,7 @@ def add_or_set(wgt: nn.Parameter, new: torch.Tensor, attr: str = "sum_grad_squar
 
 def contiguous(wgt: Any):
     if isinstance(wgt, Tensor):
-        return wgt.contiguous()
+        return torch.clone(wgt.contiguous())
     return wgt
 
 
@@ -189,7 +189,7 @@ class EinsumFn(torch.autograd.Function):
             if weight.requires_grad:
                 ctx.save_for_backward(inp, weight)
                 ctx.spec = spec
-            return torch.clone(torch.einsum(spec, inp, weight))
+            return torch.einsum(spec, inp, weight).contiguous()
 
     @staticmethod
     def backward(ctx, dy: Tensor) -> Tuple[None, Tensor, Tensor]:
@@ -237,7 +237,7 @@ class ReshapeFn(torch.autograd.Function):
             if weight.requires_grad:
                 ctx.save_for_backward(weight)
                 ctx.out = out
-            return out
+        return out
 
     @staticmethod
     def backward(ctx, dy: Tensor) -> Tuple[None, Tensor]:

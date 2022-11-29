@@ -10,7 +10,7 @@ setuptools.setup(
     name='truegrad',
     license='BSD',
     description='PyTorch interface for TrueGrad-AdamW',
-    version='2.1.1',
+    version='2.1.2',
     long_description=README,
     url='https://github.com/clashluke/truegrad',
     packages=setuptools.find_packages(),

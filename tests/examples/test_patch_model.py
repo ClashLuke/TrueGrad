@@ -9,10 +9,6 @@ def test():
     model = alexnet()
     optim = TGAdamW(model.parameters())
 
-    for mod in model.modules():
-        if hasattr(mod, "inplace"):
-            mod.inplace = False
-
     patch_model(model)
 
     inp = torch.randn((2, 3, 224, 224))

@@ -6,7 +6,7 @@ from torchvision.models import resnet18
 from truegrad.optim import TGAdamW
 from truegrad.utils import patch_torch
 
-patch_torch()  # call before model creation, otherwise complete freedom
+patch_torch()
 
 
 def test_resnet():
