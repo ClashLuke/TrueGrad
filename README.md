@@ -38,7 +38,7 @@ from truegrad.optim import TGAdamW
 
 # define model by mixing truegrad.nn and torch.nn
 model = torch.nn.Sequential(nn.Linear(1, 10),
-                            nn.LayerNorm([1, 10]),
+                            nn.LayerNorm(10),
                             torch.nn.ReLU(),
                             nn.Linear(10, 1))
 optim = TGAdamW(model.parameters())  # truegrad.optim.TGAdamW instead of torch.optim.AdamW
@@ -201,7 +201,6 @@ tgt = torch.randint(0, 1000, (2,))
 # standard training loop
 i = 0
 while True:
-    # "SumGradSquared" computes the sum of the squared gradient
     loss = torch.nn.functional.cross_entropy(model(inp), tgt)
     loss.backward()
     optim.step()
@@ -268,7 +267,7 @@ from truegrad import nn
 from truegrad.optim import TGAdamW
 
 model = torch.nn.Sequential(nn.Linear(1, 10),  # Weights coming from truegrad.nn 
-                            nn.LayerNorm([1, 10]),
+                            nn.LayerNorm(10),
                             torch.nn.ReLU(),
                             torch.nn.Linear(10, 1))  # Weights coming torch.nn
 

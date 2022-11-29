@@ -115,9 +115,15 @@ def valid_attr(wgt: nn.Parameter, attr: str = "sum_grad_squared"):
 
 
 def add_or_set(wgt: nn.Parameter, new: torch.Tensor, attr: str = "sum_grad_squared"):
-    if hasattr(wgt, attr) and getattr(wgt, attr) is not None:
+    if valid_attr(wgt, attr):
         new = getattr(wgt, attr) + new
     setattr(wgt, attr, new)
+
+
+def contiguous(wgt: Any):
+    if isinstance(wgt, Tensor):
+        return wgt.contiguous()
+    return wgt
 
 
 # Autograd Functions
@@ -229,17 +235,19 @@ class ReshapeFn(torch.autograd.Function):
         with activate_tg_params(weight):
             out = TrueGradTensor(weight.reshape(new_shape).detach().requires_grad_(True))
             if weight.requires_grad:
-                ctx.save_for_backward(weight, out)
+                ctx.save_for_backward(weight)
+                ctx.out = out
             return out
 
     @staticmethod
     def backward(ctx, dy: Tensor) -> Tuple[None, Tensor]:
         if not ctx.saved_tensors:
             return None, None
-        wgt, out = ctx.saved_tensors
+        wgt, = ctx.saved_tensors
+        out = ctx.out
         with activate_tg_params(wgt):
             if valid_attr(out):
-                add_or_set(wgt, ctx.out.sum_grad_squared)
+                add_or_set(wgt, ctx.out.sum_grad_squared.reshape(wgt.size()))
         return dy.reshape(wgt.size()), None
 
 
@@ -249,7 +257,8 @@ class TransposeFn(torch.autograd.Function):
         with activate_tg_params(weight):
             out = TrueGradTensor(weight.transpose(*dims).detach().requires_grad_(True))
             if weight.requires_grad:
-                ctx.save_for_backward(weight, out)
+                ctx.save_for_backward(weight)
+                ctx.out = out
                 ctx.dims = dims
         return out
 
@@ -257,7 +266,8 @@ class TransposeFn(torch.autograd.Function):
     def backward(ctx, dy: Tensor) -> Tuple[None, Tensor]:
         if not ctx.saved_tensors:
             return None, None
-        wgt, out = ctx.saved_tensors
+        wgt, = ctx.saved_tensors
+        out = ctx.out
         with activate_tg_params(wgt):
             if valid_attr(out):
                 add_or_set(wgt, out.sum_grad_squared.transpose(*ctx.dims()))
@@ -270,15 +280,17 @@ class ChunkFn(torch.autograd.Function):
         with activate_tg_params(weight):
             out = tuple(TrueGradTensor(c) for c in weight.chunk(chunks, dim))
             if weight.requires_grad:
-                ctx.save_for_backward(weight, out)
+                ctx.save_for_backward(weight)
                 ctx.dim = dim
+                ctx.out = out
         return out
 
     @staticmethod
     def backward(ctx, *dy: Tensor):
         if not ctx.saved_tensors:
             return None, None, None
-        wgt, out = ctx.saved_tensors
+        wgt, = ctx.saved_tensors
+        out = ctx.out
         with activate_tg_params(wgt):
             if all(valid_attr(o) for o in out):
                 add_or_set(wgt, torch.cat([o.sum_grad_squared for o in out], dim=ctx.dim))
@@ -291,15 +303,17 @@ class SplitFn(torch.autograd.Function):
         with activate_tg_params(weight):
             out = tuple(TrueGradTensor(c) for c in weight.split(split_size, dim))
             if weight.requires_grad:
-                ctx.save_for_backward(weight, out)
+                ctx.save_for_backward(weight)
                 ctx.dim = dim
+                ctx.out = out
         return out
 
     @staticmethod
     def backward(ctx, *dy: Tensor):
         if not ctx.saved_tensors:
             return None, None, None
-        wgt, out = ctx.saved_tensors
+        wgt = ctx.saved_tensors
+        out = ctx.out
         with activate_tg_params(wgt):
             if all(valid_attr(o) for o in out):
                 add_or_set(wgt, torch.cat([o.sum_grad_squared for o in out], dim=ctx.dim))
@@ -312,15 +326,17 @@ class ExpandFn(torch.autograd.Function):
         with activate_tg_params(weight):
             out = TrueGradTensor(weight.expand(new_shape))
             if weight.requires_grad:
-                ctx.save_for_backward(weight, out)
+                ctx.save_for_backward(weight)
                 ctx.summed = [i for i, d in enumerate(new_shape) if d != -1]
+                ctx.out = out
         return out
 
     @staticmethod
     def backward(ctx, dy: Tensor) -> Tuple[None, Tensor]:
         if not ctx.saved_tensors:
             return None, None
-        wgt, out = ctx.saved_tensors
+        wgt, = ctx.saved_tensors
+        out = ctx.out
         with activate_tg_params(wgt):
             if valid_attr(out):
                 sum_grad_squared = out.sum_grad_squared
@@ -338,7 +354,7 @@ class WrapFn(torch.autograd.Function):
         ctx.fn = fn
         ctx.args = args
         ctx.kwargs = kwargs
-        return out
+        return tree_map(contiguous, out)
 
     @staticmethod
     def backward(ctx, dy: Tensor) -> Tuple[None, Tensor, None, None]:
@@ -347,7 +363,7 @@ class WrapFn(torch.autograd.Function):
                 x = x.data
             if not isinstance(x, Tensor) or not torch.is_floating_point(x):
                 return x
-            x = torch.square(x.detach()).detach()
+            x = torch.square(x.detach()).detach().contiguous()
             x.requires_grad_(True)
             return x
 
@@ -360,9 +376,8 @@ class WrapFn(torch.autograd.Function):
                 torch.autograd.backward(out, tree_map(_fn, dy))
 
             for p, a in zip(list(ctx.args) + list(ctx.kwargs.values()), list(args) + list(kwargs.values())):
-                if not hasattr(a, "grad"):
-                    continue
-                add_or_set(p, a.grad.contiguous())
+                if valid_attr(a, "grad"):
+                    add_or_set(p, a.contiguous())
 
         return None, dy, None, None
 

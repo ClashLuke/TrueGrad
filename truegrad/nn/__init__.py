@@ -1,9 +1,9 @@
-from typing import List
+from typing import List, Union
 
 import torch
 import torch.nn as nn
 
-from truegrad.functional import TrueGradParameter, add, gather, is_tgparam, mul
+from truegrad.functional import TrueGradParameter, add, is_tgparam, mul
 from truegrad.nn import functional
 
 TrueGradParameter = TrueGradParameter
@@ -126,8 +126,8 @@ class _LayerNorm(nn.Module):
 
 
 class LayerNorm(Normalization):
-    def __init__(self, normalized_shape, eps=1e-05, elementwise_affine=True, device=None, dtype=None,
-                 broadcast: bool = False):
+    def __init__(self, normalized_shape: Union[int, List[int]], eps=1e-05, elementwise_affine=True, device=None,
+                 dtype=None, broadcast: bool = False):
         if device is not None or dtype is not None:
             raise ValueError("device and dtype are not supported. Ensure both are set to None.")
         if isinstance(normalized_shape, int):

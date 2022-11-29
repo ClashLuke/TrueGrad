@@ -40,7 +40,7 @@ def from_x(name: str, fn: typing.Callable, module):
     return _fn
 
 
-def _patch(tg, th):
+def _patch(tg, th, wrap: bool):
     tg_dir = dir(tg)
     for name in dir(th):
         if name not in tg_dir:
@@ -50,11 +50,13 @@ def _patch(tg, th):
             continue
         if item.__module__ != tg.__name__:
             continue
-        setattr(th, name, from_x(name, item, th))
+        if wrap:
+            item = from_x(name, item, th)
+        setattr(th, name, item)
 
 
 def patch_torch():
-    _patch(truegrad.nn.functional, torch.nn.functional)
-    _patch(truegrad.nn.functional, torch)
-    _patch(truegrad.nn, torch.nn)
+    _patch(truegrad.nn.functional, torch.nn.functional, True)
+    _patch(truegrad.nn.functional, torch, True)
+    _patch(truegrad.nn, torch.nn, False)
     overrides.has_torch_function_variadic = lambda *x: False

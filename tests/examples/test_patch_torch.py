@@ -26,7 +26,6 @@ def test_resnet():
 
 
 def test_transformer():
-
     model = transformers.BertModel.from_pretrained("google/bert_uncased_L-2_H-128_A-2")  # any existing model
     tokenizer = transformers.BertTokenizer.from_pretrained("google/bert_uncased_L-2_H-128_A-2")
 
