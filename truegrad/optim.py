@@ -185,3 +185,48 @@ class TGLaProp(TrueGrad):
             alpha = -group['lr'] / (1 - beta1 ** step)  # if grafting, beta3 issues are "grafted" away
 
         return base_update, update, alpha
+
+
+class TGRMSProp(TrueGrad):
+    """
+    This is NOT correct RMSProp. Instead, it is debiased RMSProp. Debiased RMSProp is similar to RMSProp, but instead of
+    0.9 * 0 + 0.1 * grad = 0.1 * grad
+    at the first step, you have
+    (0.9 * 0 + 0.1 * grad) / correction = grad
+    where correction = 1 / (1 - 0.9 ** step)
+
+    It's fundamentally the same as TGLaProp() with beta1 and beta3 = 0
+    """
+    true_statistics: List[str] = ["exp_avg_true_sq"]
+    base_statistics: List[str] = ["exp_avg_sq"]
+
+    def __init__(self, params, lr: float = 1e-3,
+                 betas: Union[float, Tuple[float], Tuple[float, float]] = (0.9,),
+                 eps: float = 1e-12,
+                 weight_decay: float = 1e-2,
+                 graft: bool = True,
+                 decay_to_init: bool = False,
+                 default_to_baseline: bool = False,
+                 enforce_baseline: bool = False):
+        super().__init__(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
+                         decay_to_init=decay_to_init, default_to_baseline=default_to_baseline,
+                         enforce_baseline=enforce_baseline)
+
+    def _inner(self, step: int, p: Parameter, group: Dict[str, Any],
+               exp_avg_sq: Optional[Tensor] = None, exp_avg_true_sq: Optional[Tensor] = None
+               ) -> Tuple[Optional[Tensor], Optional[Tensor], float]:
+        if isinstance(group["betas"], float):
+            beta1 = beta2 = group["betas"]
+        elif len(group["betas"]) == 1:
+            (beta1,), (beta2,) = group["betas"], group["betas"]
+        else:
+            beta1, beta2 = group['betas']
+
+        update, base_update, eps = None, None, group["eps"]
+        if exp_avg_true_sq is not None:
+            update = div_ema(p.grad, eps, exp_avg_true_sq, p.sum_grad_squared, beta2, step)
+
+        if exp_avg_sq is not None:
+            base_update = div_ema(p.grad, eps, exp_avg_sq, p.grad.square(), beta1, step)
+
+        return base_update, update, -group['lr']
