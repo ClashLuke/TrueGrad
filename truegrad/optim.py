@@ -1,19 +1,51 @@
-from typing import Tuple, Union
+import enum
+import warnings
+from typing import Tuple, Union, List, Dict, Any, Optional
 
 import torch
+from torch import Tensor
+from torch.nn import Parameter
 
 
-class TGAdamW(torch.optim.Optimizer):
+class BaseOptimizer(enum.Enum, str):
+    adam: str = "adam"
+    laprop: str = "laprop"
+
+
+def ema_(base: Tensor, update: Tensor, beta: float, step: int = 0):
+    base.mul_(beta).add_(update, alpha=1 - beta)
+    if not step:
+        return base
+    return base / (1 - beta ** step)
+
+
+def stable_sqrt(base: Tensor, eps: float):
+    return base.sqrt().clamp(min=eps)
+
+
+def div_ema(base: Tensor, eps: float, base_sq: Tensor, update_sq: Tensor, beta_sq: float, step: int = 0):
+    return base / stable_sqrt(ema_(base_sq, update_sq, beta_sq, step), eps)
+
+
+class TrueGrad(torch.optim.Optimizer):
+    true_statistics: List[str] = []
+    base_statistics: List[str] = []
+    shared_statistics: List[str] = []
+
     def __init__(self, params, lr: float = 1e-3,
-                 betas: Union[Tuple[float, float], Tuple[float, float, float]] = (0.9, 0.999, 0.999),
+                 betas: List[float] = (),
                  eps: float = 1e-12,
                  weight_decay: float = 1e-2,
                  graft: bool = True,
                  decay_to_init: bool = False,
-                 default_to_adam: bool = False):
+                 default_to_baseline: bool = False):
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
-                        decay_to_init=decay_to_init, default_to_adam=default_to_adam)
-        super(TGAdamW, self).__init__(params, defaults)
+                        decay_to_init=decay_to_init, default_to_baseline=default_to_baseline)
+        super(TrueGrad, self).__init__(params, defaults)
+
+    def _inner(self, step: int, p: Parameter, group: Dict[str, Any], **kwargs: Tensor
+               ) -> Tuple[Optional[Tensor], Optional[Tensor], float]:
+        raise NotImplementedError
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -23,37 +55,30 @@ class TGAdamW(torch.optim.Optimizer):
             with torch.enable_grad():
                 loss = closure()
         for group in self.param_groups:
-            if len(group["betas"]) == 2:
-                beta1, beta2 = group["betas"]
-                beta3 = beta2
-            else:
-                beta1, beta2, beta3 = group['betas']
-
             for p in group['params']:
                 if p.grad is None:
                     continue
-                do_adam = not hasattr(p, "sum_grad_squared") or p.sum_grad_squared is None
-                if not group["default_to_adam"] and do_adam:
+                do_baseline = not hasattr(p, "sum_grad_squared") or p.sum_grad_squared is None
+                if not group["default_to_baseline"] and do_baseline:
                     raise ValueError(f"Parameter of shape {list(p.size())} doesn't have `sum_grad_squared` attribute. "
                                      f"Make sure to use backpack.")
 
                 state = self.state[p]
 
                 if len(state) == 0:
-                    state['step'] = torch.tensor(0.)
-                    state['exp_avg'] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                    if not do_adam:
-                        state['exp_avg_true_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                    if do_adam or group["graft"]:
-                        state['exp_avg_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                    state['step'] = Tensor(0.)
+                    for s in self.shared_statistics:
+                        state[s] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                    if not do_baseline:
+                        for s in self.true_statistics:
+                            state[s] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                    if do_baseline or group["graft"]:
+                        for s in self.base_statistics:
+                            state[s] = torch.zeros_like(p, memory_format=torch.preserve_format)
                     if group["decay_to_init"]:
                         state["init"] = torch.clone(p.detach())
 
-                exp_avg = state['exp_avg']
-                exp_avg_true_sq = state['exp_avg_true_sq']
                 step_t = state['step']
-
-                # update step
                 step_t += 1
 
                 # Perform stepweight decay
@@ -63,26 +88,94 @@ class TGAdamW(torch.optim.Optimizer):
                 else:
                     p.mul_(1 - decay)
 
-                exp_avg.mul_(beta1).add_(p.grad, alpha=1 - beta1)
-
                 step = step_t.item()
-                alpha = -group['lr'] / (1 - beta1 ** step)
 
-                if not do_adam:
-                    exp_avg_true_sq.mul_(beta3).add_(p.sum_grad_squared, alpha=1 - beta3)
-                    p.sum_grad_squared = None
-                    denom = (exp_avg_true_sq / (1 - beta3 ** step)).sqrt().add_(group['eps'])
-                    update = exp_avg / denom
+                base_update, update, alpha = self._inner(step, p,
+                                                         **{k: state[k] for k in self.shared_statistics},
+                                                         **{k: state[k] for k in self.base_statistics},
+                                                         **{k: state[k] for k in self.true_statistics})
 
-                if group["graft"] or do_adam:
-                    exp_avg_sq = state['exp_avg_sq']
-                    exp_avg_sq.mul_(beta2).add_(p.grad.square(), alpha=1 - beta2)
-                    adam_update = exp_avg / (exp_avg_sq / (1 - beta2 ** step)).sqrt().add_(group['eps'])
-
-                if group["graft"] and not do_adam:
-                    alpha = alpha * adam_update.norm() / update.norm().add_(group['eps'])
-                elif do_adam:
-                    update = adam_update
+                if group["graft"] and not do_baseline:
+                    alpha = alpha * base_update.norm() / update.norm().add_(group['eps'])
+                elif do_baseline:
+                    update = base_update
 
                 p.add_(update, alpha=alpha)
         return loss
+
+
+class TGAdamW(TrueGrad):
+    true_statistics: List[str] = ["exp_avg_true_sq"]
+    base_statistics: List[str] = ["exp_avg_sq"]
+    shared_statistics: List[str] = ["exp_avg"]
+
+    def __init__(self, params, lr: float = 1e-3,
+                 betas: Union[Tuple[float, float], Tuple[float, float, float]] = (0.9, 0.999, 0.999),
+                 eps: float = 1e-12,
+                 weight_decay: float = 1e-2,
+                 graft: bool = True,
+                 decay_to_init: bool = False,
+                 default_to_adam: bool = None,
+                 default_to_baseline: bool = None):
+        if default_to_baseline is None:
+            default_to_baseline = default_to_adam
+        elif default_to_adam is not None:
+            raise ValueError("Can't set both default_to_baseline and default_to_adam, as both map to the same argument")
+        if default_to_adam is not None:
+            warnings.warn("default_to_adam is deprecated and will be replaced by default_to_baseline in April 2023")
+        if default_to_baseline is None:
+            default_to_baseline = False
+        super().__init__(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
+                         decay_to_init=decay_to_init, default_to_baseline=default_to_baseline)
+
+    def _inner(self, step: int, p: Parameter, do_baseline: bool, group: Dict[str, Any], exp_avg: Tensor,
+               exp_avg_sq: Optional[Tensor] = None, exp_avg_true_sq: Optional[Tensor] = None
+               ) -> Tuple[Optional[Tensor], Optional[Tensor], float]:
+        if len(group["betas"]) == 2:
+            (beta1, beta2), (_, beta3) = group["betas"], group["betas"]
+        else:
+            beta1, beta2, beta3 = group['betas']
+
+        update, base_update, eps = None, None, group["eps"]
+        ema_(exp_avg, p.grad, beta1)
+        if exp_avg_true_sq is not None:
+            update = div_ema(exp_avg, group["eps"], exp_avg_true_sq, p.sum_grad_squared, beta3, step)
+        if exp_avg_sq is not None:
+            base_update = div_ema(exp_avg, group["eps"], exp_avg_sq, p.grad.square(), beta2, step)
+
+        return base_update, update, -group['lr'] / (1 - beta1 ** step)
+
+
+class TGLaProp(TrueGrad):
+    true_statistics: List[str] = ["exp_avg_true", "exp_avg_true_sq"]
+    base_statistics: List[str] = ["exp_avg", "exp_avg_sq"]
+
+    def __init__(self, params, lr: float = 1e-3,
+                 betas: Union[Tuple[float, float], Tuple[float, float, float, float]] = (0.9, 0.99),
+                 eps: float = 1e-12,
+                 weight_decay: float = 1e-2,
+                 graft: bool = True,
+                 decay_to_init: bool = False,
+                 default_to_baseline: bool = False):
+        super().__init__(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
+                         decay_to_init=decay_to_init, default_to_baseline=default_to_baseline)
+
+    def _inner(self, step: int, p: Parameter, do_baseline: bool, group: Dict[str, Any],
+               exp_avg: Optional[Tensor] = None, exp_avg_sq: Optional[Tensor] = None,
+               exp_avg_true: Optional[Tensor] = None, exp_avg_true_sq: Optional[Tensor] = None
+               ) -> Tuple[Optional[Tensor], Optional[Tensor], float]:
+        if len(group["betas"]) == 2:
+            (beta1, beta2), (beta3, beta4) = group["betas"], group["betas"]
+        else:
+            beta1, beta2, beta3, beta4 = group['betas']
+
+        update, base_update, alpha, eps = None, None, 1, group["eps"]
+        if exp_avg_true_sq is not None:
+            update = ema_(exp_avg_true, div_ema(p.grad, eps, exp_avg_true_sq, p.sum_grad_squared, beta4, step), beta3)
+            alpha = -group['lr'] / (1 - beta3 ** step)
+
+        if exp_avg_sq is not None:
+            base_update = ema_(exp_avg, div_ema(p.grad, eps, exp_avg_sq, p.grad.square(), beta2, step), beta1)
+            alpha = -group['lr'] / (1 - beta1 ** step)  # if grafting, beta3 issues are "grafted" away
+
+        return base_update, update, alpha
