@@ -7,7 +7,7 @@ from torch import Tensor
 from torch.nn import Parameter
 
 
-class BaseOptimizer(enum.Enum, str):
+class BaseOptimizer(str, enum.Enum):
     adam: str = "adam"
     laprop: str = "laprop"
 
