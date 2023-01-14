@@ -38,9 +38,11 @@ class TrueGrad(torch.optim.Optimizer):
                  weight_decay: float = 1e-2,
                  graft: bool = True,
                  decay_to_init: bool = False,
-                 default_to_baseline: bool = False):
+                 default_to_baseline: bool = False,
+                 enforce_baseline: bool = False):
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
-                        decay_to_init=decay_to_init, default_to_baseline=default_to_baseline)
+                        decay_to_init=decay_to_init, default_to_baseline=default_to_baseline,
+                        enforce_baseline=enforce_baseline)
         super(TrueGrad, self).__init__(params, defaults)
 
     def _inner(self, step: int, p: Parameter, group: Dict[str, Any], **kwargs: Tensor
@@ -58,8 +60,8 @@ class TrueGrad(torch.optim.Optimizer):
             for p in group['params']:
                 if p.grad is None:
                     continue
-                do_baseline = not hasattr(p, "sum_grad_squared") or p.sum_grad_squared is None
-                if not group["default_to_baseline"] and do_baseline:
+                do_base = not hasattr(p, "sum_grad_squared") or p.sum_grad_squared is None or group["enforce_baseline"]
+                if not group["default_to_baseline"] and do_base and not group["enforce_baseline"]:
                     raise ValueError(f"Parameter of shape {list(p.size())} doesn't have `sum_grad_squared` attribute. "
                                      f"Make sure to use backpack.")
 
@@ -69,10 +71,10 @@ class TrueGrad(torch.optim.Optimizer):
                     state['step'] = Tensor(0.)
                     for s in self.shared_statistics:
                         state[s] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                    if not do_baseline:
+                    if not do_base:
                         for s in self.true_statistics:
                             state[s] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                    if do_baseline or group["graft"]:
+                    if do_base or group["graft"]:
                         for s in self.base_statistics:
                             state[s] = torch.zeros_like(p, memory_format=torch.preserve_format)
                     if group["decay_to_init"]:
@@ -95,9 +97,9 @@ class TrueGrad(torch.optim.Optimizer):
                                                          **{k: state[k] for k in self.base_statistics},
                                                          **{k: state[k] for k in self.true_statistics})
 
-                if group["graft"] and not do_baseline:
+                if group["graft"] and not do_base:
                     alpha = alpha * base_update.norm() / update.norm().add_(group['eps'])
-                elif do_baseline:
+                elif do_base:
                     update = base_update
 
                 p.add_(update, alpha=alpha)
