@@ -118,7 +118,8 @@ class TGAdamW(TrueGrad):
                  graft: bool = True,
                  decay_to_init: bool = False,
                  default_to_adam: bool = None,
-                 default_to_baseline: bool = None):
+                 default_to_baseline: bool = None,
+                 enforce_baseline: bool = False):
         if default_to_baseline is None:
             default_to_baseline = default_to_adam
         elif default_to_adam is not None:
@@ -128,7 +129,8 @@ class TGAdamW(TrueGrad):
         if default_to_baseline is None:
             default_to_baseline = False
         super().__init__(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
-                         decay_to_init=decay_to_init, default_to_baseline=default_to_baseline)
+                         decay_to_init=decay_to_init, default_to_baseline=default_to_baseline,
+                         enforce_baseline=enforce_baseline)
 
     def _inner(self, step: int, p: Parameter, do_baseline: bool, group: Dict[str, Any], exp_avg: Tensor,
                exp_avg_sq: Optional[Tensor] = None, exp_avg_true_sq: Optional[Tensor] = None
@@ -158,9 +160,11 @@ class TGLaProp(TrueGrad):
                  weight_decay: float = 1e-2,
                  graft: bool = True,
                  decay_to_init: bool = False,
-                 default_to_baseline: bool = False):
+                 default_to_baseline: bool = False,
+                 enforce_baseline: bool = False):
         super().__init__(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
-                         decay_to_init=decay_to_init, default_to_baseline=default_to_baseline)
+                         decay_to_init=decay_to_init, default_to_baseline=default_to_baseline,
+                         enforce_baseline=enforce_baseline)
 
     def _inner(self, step: int, p: Parameter, do_baseline: bool, group: Dict[str, Any],
                exp_avg: Optional[Tensor] = None, exp_avg_sq: Optional[Tensor] = None,

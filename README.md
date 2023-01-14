@@ -1,6 +1,6 @@
 # TrueGrad
 
-PyTorch interface for TrueGrad-AdamW
+PyTorch interface for TrueGrad Optimizers
 
 ## Getting Started
 
