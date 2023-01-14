@@ -92,7 +92,7 @@ class TrueGrad(torch.optim.Optimizer):
 
                 step = step_t.item()
 
-                base_update, update, alpha = self._inner(step, p,
+                base_update, update, alpha = self._inner(step, p, group,
                                                          **{k: state.get(k) for k in self.shared_statistics},
                                                          **{k: state.get(k) for k in self.base_statistics},
                                                          **{k: state.get(k) for k in self.true_statistics})
@@ -132,7 +132,7 @@ class TGAdamW(TrueGrad):
                          decay_to_init=decay_to_init, default_to_baseline=default_to_baseline,
                          enforce_baseline=enforce_baseline)
 
-    def _inner(self, step: int, p: Parameter, do_baseline: bool, group: Dict[str, Any], exp_avg: Tensor,
+    def _inner(self, step: int, p: Parameter, group: Dict[str, Any], exp_avg: Tensor,
                exp_avg_sq: Optional[Tensor] = None, exp_avg_true_sq: Optional[Tensor] = None
                ) -> Tuple[Optional[Tensor], Optional[Tensor], float]:
         if len(group["betas"]) == 2:
@@ -166,7 +166,7 @@ class TGLaProp(TrueGrad):
                          decay_to_init=decay_to_init, default_to_baseline=default_to_baseline,
                          enforce_baseline=enforce_baseline)
 
-    def _inner(self, step: int, p: Parameter, do_baseline: bool, group: Dict[str, Any],
+    def _inner(self, step: int, p: Parameter, group: Dict[str, Any],
                exp_avg: Optional[Tensor] = None, exp_avg_sq: Optional[Tensor] = None,
                exp_avg_true: Optional[Tensor] = None, exp_avg_true_sq: Optional[Tensor] = None
                ) -> Tuple[Optional[Tensor], Optional[Tensor], float]:
