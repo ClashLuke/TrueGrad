@@ -93,9 +93,9 @@ class TrueGrad(torch.optim.Optimizer):
                 step = step_t.item()
 
                 base_update, update, alpha = self._inner(step, p,
-                                                         **{k: state[k] for k in self.shared_statistics},
-                                                         **{k: state[k] for k in self.base_statistics},
-                                                         **{k: state[k] for k in self.true_statistics})
+                                                         **{k: state.get(k) for k in self.shared_statistics},
+                                                         **{k: state.get(k) for k in self.base_statistics},
+                                                         **{k: state.get(k) for k in self.true_statistics})
 
                 if group["graft"] and not do_base:
                     alpha = alpha * base_update.norm() / update.norm().add_(group['eps'])
