@@ -68,7 +68,7 @@ class TrueGrad(torch.optim.Optimizer):
                 state = self.state[p]
 
                 if len(state) == 0:
-                    state['step'] = Tensor(0.)
+                    state['step'] = torch.tensor(0.)
                     for s in self.shared_statistics:
                         state[s] = torch.zeros_like(p, memory_format=torch.preserve_format)
                     if not do_base:
