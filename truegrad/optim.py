@@ -1,4 +1,3 @@
-import enum
 import warnings
 from typing import Tuple, Union, List, Dict, Any, Optional
 
@@ -7,14 +6,9 @@ from torch import Tensor
 from torch.nn import Parameter
 
 
-class BaseOptimizer(str, enum.Enum):
-    adam: str = "adam"
-    laprop: str = "laprop"
-
-
-def ema_(base: Tensor, update: Tensor, beta: float, step: int = 0):
+def ema_(base: Tensor, update: Tensor, beta: float, step: Optional[int] = None):
     base.mul_(beta).add_(update, alpha=1 - beta)
-    if not step:
+    if step is None:
         return base
     return base / (1 - beta ** step)
 
@@ -23,8 +17,53 @@ def stable_sqrt(base: Tensor, eps: float):
     return base.sqrt().clamp(min=eps)
 
 
-def div_ema(base: Tensor, eps: float, base_sq: Tensor, update_sq: Tensor, beta_sq: float, step: int = 0):
+def div_ema(base: Tensor, eps: float, base_sq: Tensor, update_sq: Tensor, beta_sq: float, step: Optional[int] = None):
     return base / stable_sqrt(ema_(base_sq, update_sq, beta_sq, step), eps)
+
+
+class Graft(torch.optim.Optimizer):
+    def __init__(self, params, magnitude: torch.optim.Optimizer, direction: torch.optim.Optimizer,
+                 weight_decay: float = 1e-2, decay_to_init: bool = False):
+        super().__init__(params, {"weight_decay": weight_decay, "decay_to_init": decay_to_init})
+        self.magnitude = magnitude
+        self.direction = direction
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        if closure is None:
+            loss = None
+        else:
+            with torch.enable_grad():
+                loss = closure()
+
+        params_flat = []
+        for group in self.param_groups:
+            for p in group["params"]:
+                params_flat.append(p)
+                if group["decay_to_init"]:
+                    state = self.state[p]
+                    if len(state) == 0:
+                        state["init"] = torch.clone(p.detach())
+                    else:
+                        p.add_(state["init"] - p, alpha=group["weight_decay"])
+                else:
+                    p.mul_(1 - group["weight_decay"])
+
+        original_params = [torch.clone(p.detach()) for p in params_flat]
+
+        self.magnitude.step()
+        magnitudes_flat = []
+        for o, p in zip(original_params, params_flat):
+            magnitudes_flat.append(torch.norm(o - p))
+            p.set_(o.data)
+
+        self.direction.step()
+        for o, p, m in zip(original_params, params_flat, magnitudes_flat):
+            update = o - p
+            p.set_(o.data)
+            p.add_(update, alpha=m / torch.norm(update))
+
+        return loss
 
 
 class TrueGrad(torch.optim.Optimizer):
