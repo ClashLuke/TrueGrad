@@ -22,11 +22,43 @@ def div_ema(base: Tensor, eps: float, base_sq: Tensor, update_sq: Tensor, beta_s
 
 
 class Graft(torch.optim.Optimizer):
+    """
+    Learning rate grafting of two optimizers. It'll take the direction of one optimizer, but replace the scale of its
+    proposed update with that of another optimizer. The notation of a grafted optimizer combinations is
+    Magnitude#Direction, where # is the grafting operator.
+    Known-good combinations are:
+    * Adam#Lion, which outperforms pure Lion and pure Adam by avoiding vanishing gradients
+      Lion can be imported from Lucidrains' repository: https://github.com/lucidrains/lion-pytorch
+      For experimental results, see https://twitter.com/dvruette/status/1627663196839370755
+    * Adam#Shampoo, which outperforms pure Shampoo and pure Adam, by introducing second-order statistics
+      Shampoo can be imported from the official implementation: https://github.com/google-research/google-research/tree/master/scalable_shampoo/pytorch  (DO NOT USE https://github.com/jettify/pytorch-optimizer/blob/master/torch_optimizer/shampoo.py or https://github.com/moskomule/shampoo.pytorch)
+      For experimental results, see the paper: https://arxiv.org/abs/2002.09018
+    * LaProp#Lion, which works similarly to Adam#Lion, but avoids instabilities at sparse and low-magnitude gradients
+      LaProp is part of truegrad and can be used as-is.
+      Experimental results will be released soon. Sese the LaProp paper for theoretical justification: https://arxiv.org/abs/2002.04839
+
+    Grafting originates from https://openreview.net/forum?id=FpKgG31Z_i9
+
+    Usage:
+    >>> import torch
+    >>> model = torch.nn.Linear(10, 2)
+    # step sizes comes from magnitude_from, so its LR is actively used
+    >>> magnitude_from = torch.optim.Adam(model.parameters(), lr=0.1, weight_decay=0)
+    # step direction comes from direction_from. set the LR to 1 to avoid float accuracy issues
+    >>> direction_from = torch.optim.SGD(model.parameters(), lr=1, weight_decay=0)
+    # turn off weight decay in both input optimizers, but optionally use weight decay in Graft.
+    >>> opt = Graft(model.parameters(), magnitude_from, direction_from, weight_decay=0.1)
+    >>> model(torch.randn((16, 10))).mean().backward()  # get some random gradients
+    >>> opt.step()  # apply as usual
+    >>> opt.zero_grad()
+    """
+
     def __init__(self, params, magnitude: torch.optim.Optimizer, direction: torch.optim.Optimizer,
-                 weight_decay: float = 1e-2, decay_to_init: bool = False):
+                 weight_decay: float = 1e-2, decay_to_init: bool = False, eps: float = 1e-12):
         super().__init__(params, {"weight_decay": weight_decay, "decay_to_init": decay_to_init})
         self.magnitude = magnitude
         self.direction = direction
+        self.eps = eps
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -61,7 +93,7 @@ class Graft(torch.optim.Optimizer):
         for o, p, m in zip(original_params, params_flat, magnitudes_flat):
             update = o - p
             p.set_(o.data)
-            p.add_(update, alpha=m / torch.norm(update))
+            p.add_(update, alpha=m / torch.norm(update).clamp(min=self.eps))
 
         return loss
 
