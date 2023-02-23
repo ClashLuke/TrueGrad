@@ -91,7 +91,7 @@ class Graft(torch.optim.Optimizer):
 
         self.direction.step()
         for o, p, m in zip(original_params, params_flat, magnitudes_flat):
-            update = o - p
+            update = p - o
             p.set_(o.data)
             p.add_(update, alpha=m / torch.norm(update).clamp(min=self.eps))
 
