@@ -87,7 +87,7 @@ class Graft(torch.optim.Optimizer):
         magnitudes_flat = []
         for o, p in zip(original_params, params_flat):
             magnitudes_flat.append(torch.norm(o - p))
-            p.set_(o.data)
+            p.copy_(o.data)
 
         self.direction.step()
         for o, p, m in zip(original_params, params_flat, magnitudes_flat):
