@@ -54,7 +54,7 @@ class Graft(torch.optim.Optimizer):
     """
 
     def __init__(self, params, magnitude: torch.optim.Optimizer, direction: torch.optim.Optimizer,
-                 weight_decay: float = 1e-2, decay_to_init: bool = False, eps: float = 1e-12):
+                 weight_decay: float = 0, decay_to_init: bool = False, eps: float = 1e-12):
         super().__init__(params, {"weight_decay": weight_decay, "decay_to_init": decay_to_init})
         self.magnitude = magnitude
         self.direction = direction
@@ -86,14 +86,14 @@ class Graft(torch.optim.Optimizer):
         self.magnitude.step()
         magnitudes_flat = []
         for o, p in zip(original_params, params_flat):
-            magnitudes_flat.append(torch.norm(o - p))
+            magnitudes_flat.append(torch.norm(o.double() - p.double()))
             p.copy_(o.data)
 
         self.direction.step()
         for o, p, m in zip(original_params, params_flat, magnitudes_flat):
-            update = p - o
-            p.set_(o.data)
-            p.add_(update, alpha=m / torch.norm(update).clamp(min=self.eps))
+            o_double = o.double()
+            update = p.double() - o_double
+            p.copy_(o_double + update * m / torch.norm(update).clamp(min=self.eps))
 
         return loss
 
