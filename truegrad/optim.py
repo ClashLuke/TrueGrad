@@ -21,6 +21,48 @@ def div_ema(base: Tensor, eps: float, base_sq: Tensor, update_sq: Tensor, beta_s
     return base / stable_sqrt(ema_(base_sq, update_sq, beta_sq, step), eps)
 
 
+class Sign(torch.optim.Optimizer):
+    def __init__(self, params, base: torch.optim.Optimizer, lr: Optional[float] = None, weight_decay: float = 0,
+                 decay_to_init: bool = False, eps: float = 1e-12):
+        super().__init__(params, {"weight_decay": weight_decay, "decay_to_init": decay_to_init, "lr": lr, "eps": eps})
+        self.base = base
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        if closure is None:
+            loss = None
+        else:
+            with torch.enable_grad():
+                loss = closure()
+
+        params_flat = []
+        for group in self.param_groups:
+            for p in group["params"]:
+                params_flat.append(p)
+                if group["decay_to_init"]:
+                    state = self.state[p]
+                    if len(state) == 0:
+                        state["init"] = torch.clone(p.detach())
+                    else:
+                        p.add_(state["init"] - p, alpha=group["weight_decay"])
+                else:
+                    p.mul_(1 - group["weight_decay"])
+
+        params_flat = [torch.clone(p.detach()) for p in params_flat]
+
+        self.base.step()
+
+        for group in self.param_groups:
+            for p in group["params"]:
+                o = params_flat.pop(0)
+                update = p.double() - o.double()
+                p.set_(o)
+                scale = torch.norm(update) if group["lr"] is None else group["lr"]
+                p.add_(torch.sign(update), alpha=scale)
+
+        return loss
+
+
 class Graft(torch.optim.Optimizer):
     """
     Learning rate grafting of two optimizers. It'll take the direction of one optimizer, but replace the scale of its
