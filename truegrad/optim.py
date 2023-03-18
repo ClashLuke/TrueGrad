@@ -21,10 +21,66 @@ def div_ema(base: Tensor, eps: float, base_sq: Tensor, update_sq: Tensor, beta_s
     return base / stable_sqrt(ema_(base_sq, update_sq, beta_sq, step), eps)
 
 
+def decay_weight_(state: Dict[str, Any], param: torch.nn.Parameter, group: Dict[str, Any]):
+    if group["decay_to_init"]:
+        if "param_at_init" not in state:
+            state["param_at_init"] = torch.clone(param.detach())
+        else:
+            param.add_(state["param_at_init"] - param, alpha=group["weight_decay"])
+    else:
+        param.mul_(1 - group["weight_decay"])
+
+
+class OptimizerOptimizer(torch.optim.Optimizer):
+    def __init__(self, params, inner_optimizer: torch.optim.Optimizer, learning_rate_learning_rate: float = 1,
+                 weight_decay: float = 0, decay_to_init: bool = False):
+        self.learning_rate_learning_rate = learning_rate_learning_rate
+
+        self.inner_optimizer = inner_optimizer
+        param_groups = self.inner_optimizer.param_groups
+        self.inner_optimizer.param_groups = []
+        for group in param_groups:
+            for param in group["params"]:
+                group = {k: v for k, v in group.items() if k != "params"}
+                group["params"] = [param]
+                self.inner_optimizer.param_groups.append(group)
+
+        super(OptimizerOptimizer, self).__init__(params, {"weight_decay": weight_decay, "decay_to_init": decay_to_init})
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            loss = closure()
+
+        for group in self.param_groups:
+            for p in group['params']:
+                state = self.state[p]
+                decay_weight_(state, p, group)
+                state["param"] = torch.clone(p.detach())
+
+        self.inner_optimizer.step()
+
+        for group in self.inner_optimizer.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                state = self.state[p]
+                if "param" in state:
+                    neg_update = state["param"].double() - p.double()
+                    dims = ''.join(chr(ord('a') + i) for i in range(neg_update.ndim))
+                    lr_grad = torch.einsum(f"{dims},{dims}->", neg_update, p.grad.double())
+                    group["lr"] = group["lr"] + lr_grad.item() * self.learning_rate_learning_rate
+                state["param"] = None
+
+        return loss
+
+
 class Sign(torch.optim.Optimizer):
-    def __init__(self, params, base: torch.optim.Optimizer, lr: Optional[float] = None, weight_decay: float = 0,
-                 decay_to_init: bool = False, eps: float = 1e-12):
-        super().__init__(params, {"weight_decay": weight_decay, "decay_to_init": decay_to_init, "lr": lr, "eps": eps})
+    def __init__(self, params, base: torch.optim.Optimizer, lr: float = 1, weight_decay: float = 0,
+                 decay_to_init: bool = False, eps: float = 1e-12, graft_to_self: bool = True):
+        super().__init__(params, {"weight_decay": weight_decay, "decay_to_init": decay_to_init, "lr": lr, "eps": eps,
+                                  "graft_to_self": graft_to_self})
         self.base = base
 
     @torch.no_grad()
@@ -39,14 +95,7 @@ class Sign(torch.optim.Optimizer):
         for group in self.param_groups:
             for p in group["params"]:
                 params_flat.append(p)
-                if group["decay_to_init"]:
-                    state = self.state[p]
-                    if len(state) == 0:
-                        state["init"] = torch.clone(p.detach())
-                    else:
-                        p.add_(state["init"] - p, alpha=group["weight_decay"])
-                else:
-                    p.mul_(1 - group["weight_decay"])
+                decay_weight_(self.state[p], p, group)
 
         params_flat = [torch.clone(p.detach()) for p in params_flat]
 
@@ -57,7 +106,9 @@ class Sign(torch.optim.Optimizer):
                 o = params_flat.pop(0)
                 update = p.double() - o.double()
                 p.set_(o)
-                scale = torch.norm(update) if group["lr"] is None else group["lr"]
+                scale = group["lr"]
+                if group["graft_to_self"]:
+                    scale = scale * torch.norm(update)
                 p.add_(torch.sign(update), alpha=scale)
 
         return loss
@@ -96,11 +147,10 @@ class Graft(torch.optim.Optimizer):
     """
 
     def __init__(self, params, magnitude: torch.optim.Optimizer, direction: torch.optim.Optimizer,
-                 weight_decay: float = 0, decay_to_init: bool = False, eps: float = 1e-12):
-        super().__init__(params, {"weight_decay": weight_decay, "decay_to_init": decay_to_init})
+                 weight_decay: float = 0, decay_to_init: bool = False, eps: float = 1e-12, lr: float = 1):
+        super().__init__(params, {"weight_decay": weight_decay, "decay_to_init": decay_to_init, "lr": lr, "eps": eps})
         self.magnitude = magnitude
         self.direction = direction
-        self.eps = eps
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -114,14 +164,7 @@ class Graft(torch.optim.Optimizer):
         for group in self.param_groups:
             for p in group["params"]:
                 params_flat.append(p)
-                if group["decay_to_init"]:
-                    state = self.state[p]
-                    if len(state) == 0:
-                        state["init"] = torch.clone(p.detach())
-                    else:
-                        p.add_(state["init"] - p, alpha=group["weight_decay"])
-                else:
-                    p.mul_(1 - group["weight_decay"])
+                decay_weight_(self.state[p], p, group)
 
         original_params = [torch.clone(p.detach()) for p in params_flat]
 
@@ -132,10 +175,13 @@ class Graft(torch.optim.Optimizer):
             p.copy_(o.data)
 
         self.direction.step()
-        for o, p, m in zip(original_params, params_flat, magnitudes_flat):
-            o_double = o.double()
-            update = p.double() - o_double
-            p.copy_(o_double + update * m / torch.norm(update).clamp(min=self.eps))
+
+        for group in self.param_groups:
+            for _ in group["params"]:
+                o, p, m = original_params.pop(0), params_flat.pop(0), magnitudes_flat.pop(0)
+                o_double = o.double()
+                update = p.double() - o_double
+                p.copy_(o_double + update * m / torch.norm(update).clamp(min=group["eps"]) * group["lr"])
 
         return loss
 
