@@ -68,11 +68,12 @@ class OptimizerOptimizer(torch.optim.Optimizer):
                 if p.grad is None:
                     continue
                 state = self.state[p]
-                if "param" in state:
-                    neg_update = state["param"].double() - p.double()
-                    dims = ''.join(chr(ord('a') + i) for i in range(neg_update.ndim))
-                    lr_grad = torch.einsum(f"{dims},{dims}->", neg_update, p.grad.double())
-                    state["lr"] = group["lr"] = group["lr"] + lr_grad.item() * self.learning_rate_learning_rate
+                update = p.double() - state["param"].double()
+                if "old_update" in state:
+                    dims = ''.join(chr(ord('a') + i) for i in range(update.ndim))
+                    lr_grad = torch.einsum(f"{dims},{dims}->", update, state["old_update"].double())
+                    state["lr"] = group["lr"] = group["lr"] - lr_grad.item() * self.learning_rate_learning_rate
+                state["old_update"] = torch.clone(update.to(torch.bfloat16).detach())
                 state["param"] = None
 
         return loss
