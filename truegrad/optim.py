@@ -26,9 +26,9 @@ def decay_weight_(state: Dict[str, Any], param: torch.nn.Parameter, group: Dict[
         if "param_at_init" not in state:
             state["param_at_init"] = torch.clone(param.detach())
         else:
-            param.add_(state["param_at_init"] - param, alpha=group["weight_decay"])
+            param.add_(state["param_at_init"] - param, alpha=group["weight_decay"] * group["lr"])
     else:
-        param.mul_(1 - group["weight_decay"])
+        param.mul_(1 - group["weight_decay"] * group["lr"])
 
 
 class OptimizerOptimizer(torch.optim.Optimizer):
@@ -56,7 +56,9 @@ class OptimizerOptimizer(torch.optim.Optimizer):
         for group in self.param_groups:
             for p in group['params']:
                 state = self.state[p]
-                decay_weight_(state, p, group)
+                if "lr" in state:
+                    group["lr"] = state["lr"]
+                    decay_weight_(state, p, group)
                 state["param"] = torch.clone(p.detach())
 
         self.inner_optimizer.step()
@@ -70,7 +72,7 @@ class OptimizerOptimizer(torch.optim.Optimizer):
                     neg_update = state["param"].double() - p.double()
                     dims = ''.join(chr(ord('a') + i) for i in range(neg_update.ndim))
                     lr_grad = torch.einsum(f"{dims},{dims}->", neg_update, p.grad.double())
-                    group["lr"] = group["lr"] + lr_grad.item() * self.learning_rate_learning_rate
+                    state["lr"] = group["lr"] = group["lr"] + lr_grad.item() * self.learning_rate_learning_rate
                 state["param"] = None
 
         return loss
