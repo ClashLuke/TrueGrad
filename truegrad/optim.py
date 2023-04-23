@@ -1,5 +1,4 @@
 import functools
-import warnings
 from typing import Tuple, Union, List, Dict, Any, Optional
 
 import torch
@@ -30,6 +29,7 @@ class WeightDecayChain:
 
 class LpWeightDecay(WeightDecayBase):
     def __init__(self, power: float):
+        super().__init__()
         self.power = power
 
     def __call__(self, mod: torch.optim.Optimizer, p: Tensor, idx: int):
@@ -46,12 +46,17 @@ class L2WeightDecay(LpWeightDecay):
         super().__init__(1)
 
 
-def _param_iterator(mod: torch.optim.Optimizer):
-    yield from (p.detach().clone() for group in mod.param_groups for p in group["params"])
+def _detach(x: Tensor) -> Tensor:
+    return x.detach().clone()
+
+
+def _param_iterator(mod: torch.optim.Optimizer, fn=_detach):
+    yield from (fn(p) for group in mod.param_groups for p in group["params"])
 
 
 class WeightDecayToValue(WeightDecayBase):
     def __init__(self):
+        super().__init__()
         self.target_values: List[Tensor] = ...
         self.global_step = 0
 
@@ -261,6 +266,8 @@ class Graft(torch.optim.Optimizer):
         original_params = list(_param_iterator(self))
 
         self.magnitude.step()
+        params_flat = list(_param_iterator(self, lambda x: x))
+
         magnitudes_flat = []
         for o, p in zip(original_params, params_flat):
             magnitudes_flat.append(torch.norm(o.double() - p.double()))
