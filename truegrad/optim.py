@@ -115,16 +115,6 @@ def div_ema(base: Tensor, eps: float, base_sq: Tensor, update_sq: Tensor, beta_s
     return base / stable_sqrt(ema_(base_sq, update_sq, beta_sq, step), eps)
 
 
-def decay_weight_(state: Dict[str, Any], param: torch.nn.Parameter, group: Dict[str, Any]):
-    if group["decay_to_init"]:
-        if "param_at_init" not in state:
-            state["param_at_init"] = torch.clone(param.detach())
-        else:
-            param.add_(state["param_at_init"] - param, alpha=group["weight_decay"] * group["lr"])
-    else:
-        param.mul_(1 - group["weight_decay"] * group["lr"])
-
-
 def _default_decay(weight_decay_cls: Optional[WeightDecayChain]) -> WeightDecayChain:
     if weight_decay_cls is None:
         return WeightDecayChain(L2WeightDecay())
@@ -153,15 +143,14 @@ class OptimizerOptimizer(torch.optim.Optimizer):
         if closure is not None:
             loss = closure()
 
-        self.weight_decay_cls(self)
-
         for group in self.param_groups:
             for p in group['params']:
                 state = self.state[p]
                 if "lr" in state:
                     group["lr"] = state["lr"]
-                    decay_weight_(state, p, group)
                 state["param"] = torch.clone(p.detach())
+
+        self.weight_decay_cls(self)
 
         self.inner_optimizer.step()
 
@@ -330,8 +319,6 @@ class TrueGrad(torch.optim.Optimizer):
                     if do_base or group["graft"]:
                         for s in self.base_statistics:
                             state[s] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                    if group["decay_to_init"]:
-                        state["init"] = torch.clone(p.detach())
 
                 step_t = state['step']
                 step_t += 1
@@ -393,7 +380,7 @@ class TGLaProp(TrueGrad):
 
     def __init__(self, params, lr: float = 1e-3,
                  betas: Union[Tuple[float, float], Tuple[float, float, float, float]] = (0.9, 0.99), eps: float = 1e-12,
-                 weight_decay: float = 1e-2, graft: bool = True, decay_to_init: bool = False,
+                 weight_decay: float = 1e-2, graft: bool = True,
                  default_to_baseline: bool = False, enforce_baseline: bool = False,
                  weight_decay_cls: Optional[WeightDecayChain] = None):
         super().__init__(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
