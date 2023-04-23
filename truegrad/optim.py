@@ -23,8 +23,8 @@ class WeightDecayChain:
         idx = 0
         for group in mod.param_groups:
             for p in group["params"]:
-                p.data.add(functools.reduce(lambda x, f: f(mod, x, idx), self.operands, p),
-                           alpha=-group["lr"] * group["weight_decay"])
+                p.data.add_(functools.reduce(lambda x, f: f(mod, x, idx), self.operands, p),
+                            alpha=-group["lr"] * group["weight_decay"])
                 idx += 1
 
 
@@ -354,9 +354,8 @@ class TGAdamW(TrueGrad):
 
     def __init__(self, params, lr: float = 1e-3,
                  betas: Union[Tuple[float, float], Tuple[float, float, float]] = (0.9, 0.999, 0.999),
-                 eps: float = 1e-12, weight_decay: float = 1e-2, graft: bool = True,
-                 default_to_baseline: bool = None, enforce_baseline: bool = False,
-                 weight_decay_cls: Optional[WeightDecayChain] = None):
+                 eps: float = 1e-12, weight_decay: float = 1e-2, graft: bool = True, default_to_baseline: bool = None,
+                 enforce_baseline: bool = False, weight_decay_cls: Optional[WeightDecayChain] = None):
         if default_to_baseline is None:
             default_to_baseline = False
         super().__init__(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
@@ -428,9 +427,8 @@ class TGRMSProp(TrueGrad):
     base_statistics: List[str] = ["exp_avg_sq"]
 
     def __init__(self, params, lr: float = 1e-3, betas: Union[float, Tuple[float], Tuple[float, float]] = (0.9,),
-                 eps: float = 1e-12, weight_decay: float = 1e-2, graft: bool = True,
-                 default_to_baseline: bool = False, enforce_baseline: bool = False,
-                 weight_decay_cls: Optional[WeightDecayChain] = None):
+                 eps: float = 1e-12, weight_decay: float = 1e-2, graft: bool = True, default_to_baseline: bool = False,
+                 enforce_baseline: bool = False, weight_decay_cls: Optional[WeightDecayChain] = None):
         super().__init__(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, graft=graft,
                          default_to_baseline=default_to_baseline, enforce_baseline=enforce_baseline,
                          weight_decay_cls=weight_decay_cls)
