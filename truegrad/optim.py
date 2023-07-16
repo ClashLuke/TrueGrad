@@ -196,9 +196,10 @@ class Sign(torch.optim.Optimizer):
                 update = p.double() - o.double()
                 p.set_(o)
                 scale = group["lr"]
+                sign_update = torch.sign(update)
                 if group["graft_to_self"]:
-                    scale = scale * torch.norm(update)
-                p.add_(torch.sign(update), alpha=scale)
+                    scale = scale * update.norm() / sign_update.norm().clamp(min=group["eps"])
+                p.add_(sign_update, alpha=scale)
 
         return loss
 
